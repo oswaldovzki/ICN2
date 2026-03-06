@@ -79,19 +79,19 @@ ICN2.SITUATION_MODIFIERS = {
 ICN2.RACE_MODIFIERS = {
     -- Horde
     ["Orc"]            = { hunger = 0.9,  thirst = 1.0,  fatigue = 0.9  },
-    ["Undead"]         = { hunger = 0.6,  thirst = 0.7,  fatigue = 0.8  },  -- Cannibalize helps
+    ["Undead"]         = { hunger = 0.1,  thirst = 0.1,  fatigue = 0.7  },  -- undead don't need food/water, but still get tired from body parts decaying
     ["Tauren"]         = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.85 },
     ["Troll"]          = { hunger = 1.0,  thirst = 1.1,  fatigue = 1.0  },
     ["BloodElf"]       = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
     ["Goblin"]         = { hunger = 1.2,  thirst = 1.2,  fatigue = 1.1  },  -- hyperactive metabolism
-    ["Nightborne"]     = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.9  },
+    ["Nightborne"]     = { hunger = 1.3,  thirst = 1.3,  fatigue = 1.5  },  -- arcane addiction causes faster decay away from the Nightwell
     ["HighmountainTauren"] = { hunger = 1.15, thirst = 1.0, fatigue = 0.8 },
     ["MagharOrc"]      = { hunger = 0.85, thirst = 0.9,  fatigue = 0.85 },
-    ["Vulpera"]        = { hunger = 1.1,  thirst = 1.3,  fatigue = 1.0  },  -- desert dwellers: conserve water?
+    ["Vulpera"]        = { hunger = 1.1,  thirst = 0.8,  fatigue = 1.0  },  -- desert dwellers: conserve water
     ["ZandalariTroll"] = { hunger = 1.0,  thirst = 1.0,  fatigue = 0.9  },
 
     -- Alliance
-    ["Human"]          = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
+    ["Human"]          = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  }, -- baseline
     ["Dwarf"]          = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.9  },
     ["NightElf"]       = { hunger = 0.85, thirst = 0.9,  fatigue = 0.85 },
     ["Gnome"]          = { hunger = 1.2,  thirst = 1.2,  fatigue = 1.2  },  -- small + fast = burns more
@@ -108,8 +108,6 @@ ICN2.RACE_MODIFIERS = {
     ["Dracthyr"]       = { hunger = 0.8,  thirst = 0.85, fatigue = 0.8  },
     ["EarthenDwarf"]   = { hunger = 0.65, thirst = 0.6,  fatigue = 0.7  },  -- stone body
 
-    -- Demon Hunter
-    ["DemonHunter"]    = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.9  },  -- soul feeding helps
 }
 
 -- ── Class modifiers ───────────────────────────────────────────────────────────
@@ -118,15 +116,15 @@ ICN2.CLASS_MODIFIERS = {
     ["PALADIN"]     = { hunger = 1.0,  thirst = 1.0,  fatigue = 0.95 },  -- divine sustenance
     ["HUNTER"]      = { hunger = 0.9,  thirst = 0.95, fatigue = 0.9  },  -- used to the wild
     ["ROGUE"]       = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
-    ["PRIEST"]      = { hunger = 0.85, thirst = 0.85, fatigue = 0.85 },
-    ["SHAMAN"]      = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.9  },
-    ["MAGE"]        = { hunger = 0.9,  thirst = 0.85, fatigue = 0.9  },  -- conjured food
-    ["WARLOCK"]     = { hunger = 0.85, thirst = 0.9,  fatigue = 0.9  },  -- life tap sustains
-    ["MONK"]        = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.85 },
-    ["DRUID"]       = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.85 },
-    ["DEMONHUNTER"] = { hunger = 0.85, thirst = 0.9,  fatigue = 0.9  },
-    ["DEATHKNIGHT"] = { hunger = 0.7,  thirst = 0.6,  fatigue = 0.7  },  -- undead, reduced needs
-    ["EVOKER"]      = { hunger = 0.85, thirst = 0.9,  fatigue = 0.8  },
+    ["PRIEST"]      = { hunger = 1.0,  thirst = 1.0,  fatigue = 0.85 },
+    ["SHAMAN"]      = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
+    ["MAGE"]        = { hunger = 0.9,  thirst = 0.85, fatigue = 0.9  },  -- arcane knowledge helps conserve energy
+    ["WARLOCK"]     = { hunger = 0.85, thirst = 1.0,  fatigue = 0.9  },  -- life tap sustains
+    ["MONK"]        = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.85 },  -- disciplined training and meditation
+    ["DRUID"]       = { hunger = 0.9,  thirst = 0.95, fatigue = 0.9  },  -- used to the wild
+    ["DEMONHUNTER"] = { hunger = 0.9,  thirst = 1.0,  fatigue = 0.9  },  -- soul feeding helps, but reckless playstyle increases needs
+    ["DEATHKNIGHT"] = { hunger = 0.5,  thirst = 0.5,  fatigue = 0.5  },  -- undead, reduced needs
+    ["EVOKER"]      = { hunger = 1.1,  thirst = 1.1,  fatigue = 1.1  },  -- draconic metabolism, but intense magic use can be draining
 }
 
 -- ── Emote tables by state ─────────────────────────────────────────────────────
@@ -144,9 +142,9 @@ ICN2.EMOTES = {
         low      = { "/yawn", "/sigh" },
     },
     satisfied = {
-        hunger  = { "/burp", "/smile", "/flex" },
-        thirst  = { "/burp", "/cheer" },
-        fatigue = { "/flex", "/cheer", "/dance" },
+        hunger  = { "/burp", "/flex" },
+        thirst  = { "/burp" },
+        fatigue = { "/flex", "/smile" },
     },
 }
 
