@@ -46,11 +46,12 @@ local BLOCK_ATLAS = {
 
 -- ── Indicator thresholds (% per second) ──────────────────────────────────────
 -- These define when to switch between indicator glyphs.
-local IND_FAST_UP   =  0.50   -- ⇈  fast recovery
-local IND_UP        =  0.05   -- ↑  slow recovery
-local IND_STABLE    = -0.05   -- •  within ±0.05 = stable
-local IND_DOWN      = -0.50   -- ↓  slow decay
--- below IND_DOWN   = ⇊  fast decay
+local IND_FAST_UP       =  0.50   -- >>  fast recovery
+local IND_UP            =  0.05   -- >  slow recovery
+local IND_STABLE_UP     =  0.00   -- >=  stable to slow recovery
+local IND_STABLE_DOWN   =  0.00   -- =<  stable to slow decay
+local IND_DOWN          = -0.05   -- <  slow decay
+local IND_FAST_DOWN     = -0.50   -- <<  fast decay
 
 -- ── Color helper ──────────────────────────────────────────────────────────────
 local function getNeedColor(key, val)
@@ -65,15 +66,19 @@ end
 -- ── Indicator glyph + color from net rate ────────────────────────────────────
 local function getIndicator(rate)
     if rate >= IND_FAST_UP then
-        return "\xe2\x87\x88", 0.1, 0.9, 0.1     -- ⇈ bright green
+        return ">>", 0.1, 0.9, 0.1      -- >> bright green
     elseif rate >= IND_UP then
-        return "\xe2\x86\x91", 0.4, 0.9, 0.4     -- ↑ green
-    elseif rate > IND_STABLE then
-        return "\xe2\x80\xa2", 0.55, 0.55, 0.55  -- • gray
-    elseif rate > IND_DOWN then
-        return "\xe2\x86\x93", 0.9, 0.6, 0.1     -- ↓ orange
+        return ">", 0.4, 0.9, 0.4       -- > green
+    elseif rate > IND_STABLE_UP then
+        return ">=", 0.55, 0.55, 0.55    -- >= gray
+    elseif rate < IND_STABLE_DOWN then
+        return "=<", 0.55, 0.55, 0.55    -- =< gray
+    elseif rate < IND_DOWN then
+    return "<", 0.9, 0.6, 0.1           -- < orange
+    elseif rate < IND_FAST_DOWN then
+        return "<<", 0.9, 0.1, 0.1      -- << red
     else
-        return "\xe2\x87\x8a", 0.9, 0.1, 0.1     -- ⇊ red
+        return "##", 0, 0, 0            -- ## black fallback
     end
 end
 
@@ -194,7 +199,7 @@ function ICN2:BuildHUD()
         -- Anchored to the RIGHT of rowFrame so it never overlaps the bar.
         local indicator = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         indicator:SetPoint("RIGHT", rowFrame, "RIGHT", -2, 0)
-        indicator:SetText("\xe2\x80\xa2")           -- starts as • (stable)
+        indicator:SetText("•")           -- starts as • (stable)
         indicator:SetTextColor(0.55, 0.55, 0.55)
 
         bars[key] = {
@@ -207,6 +212,23 @@ function ICN2:BuildHUD()
             indicator   = indicator,
         }
     end
+
+    -- Add command buttons for testing
+    local cmdButton1 = CreateFrame("Button", "ICN2CmdButton1", hudFrame, "UIPanelButtonTemplate")
+    cmdButton1:SetSize(24, 24)
+    cmdButton1:SetPoint("TOPRIGHT", hudFrame, "TOPRIGHT", 0, 24)
+    local configTex = cmdButton1:CreateTexture(nil, "ARTWORK")
+    configTex:SetAllPoints()
+    configTex:SetAtlas("poi-workorders")
+    cmdButton1:SetScript("OnClick", function() ICN2:ToggleOptions() end)
+
+    local cmdButton2 = CreateFrame("Button", "ICN2CmdButton2", hudFrame, "UIPanelButtonTemplate")
+    cmdButton2:SetSize(24, 24)
+    cmdButton2:SetPoint("TOPRIGHT", hudFrame, "TOPRIGHT", -24, 24)
+    local infoTex = cmdButton2:CreateTexture(nil, "ARTWORK")
+    infoTex:SetAllPoints()
+    infoTex:SetAtlas("loreobject-32x32")
+    cmdButton2:SetScript("OnClick", function() ICN2:PrintDetails() end)
 
     hudFrame:SetAlpha(s.hudAlpha)
     hudFrame:SetScale(s.hudScale)
@@ -247,7 +269,8 @@ function ICN2:UpdateHUD()
     hudFrame:Show()
 
     local values = { hunger = ICN2DB.hunger, thirst = ICN2DB.thirst, fatigue = ICN2DB.fatigue }
-    local rates  = ICN2._lastRates or { hunger = 0, thirst = 0, fatigue = 0 }
+    -- Calculate current rates in real-time for accurate indicators
+    local rates  = ICN2:GetCurrentRates()
     local blocky = ICN2DB.settings.blockyBars
 
     for _, key in ipairs(NEED_KEYS) do

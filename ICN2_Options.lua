@@ -64,7 +64,7 @@ end
 function ICN2:BuildOptions()
     -- v1.1: taller frame to accommodate two new sections
     optFrame = CreateFrame("Frame", "ICN2OptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-    optFrame:SetSize(450, 560) -- v1.1.4: wider to fit longer labels without overflowing the frame
+    optFrame:SetSize(450, 600) -- wider and taller than default to fit new options
     optFrame:SetPoint("CENTER")
     optFrame:SetFrameStrata("HIGH")
     optFrame:SetMovable(true)
@@ -193,6 +193,36 @@ function ICN2:BuildOptions()
         ICN2DB.hunger  = 100
         ICN2DB.thirst  = 100
         ICN2DB.fatigue = 100
+        ICN2:UpdateHUD()
+    end)
+
+    -- ── Section: Manual deplete buttons ──────────────────────────────────────
+    makeLabel(optFrame, "Manual Deplete:", 14, -540, 1, 0.8, 0)
+
+    local starveBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
+    starveBtn:SetSize(80, 24)
+    starveBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 14, -558)
+    starveBtn:SetText("|cFFFF4444Starve|r")
+    starveBtn:SetScript("OnClick", function()
+        ICN2DB.hunger = 0
+        ICN2:UpdateHUD()
+    end)
+
+    local dehydrateBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
+    dehydrateBtn:SetSize(80, 24)
+    dehydrateBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 102, -558)
+    dehydrateBtn:SetText("|cFFFF4444Dehydrate|r")
+    dehydrateBtn:SetScript("OnClick", function()
+        ICN2DB.thirst = 0
+        ICN2:UpdateHUD()
+    end)
+
+    local exhaustBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
+    exhaustBtn:SetSize(80, 24)
+    exhaustBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 190, -558)
+    exhaustBtn:SetText("|cFFFF4444Exhaust|r")
+    exhaustBtn:SetScript("OnClick", function()
+        ICN2DB.fatigue = 0
         ICN2:UpdateHUD()
     end)
 end

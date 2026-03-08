@@ -79,7 +79,7 @@ ICN2.SITUATION_MODIFIERS = {
 ICN2.RACE_MODIFIERS = {
     -- Horde
     ["Orc"]            = { hunger = 0.9,  thirst = 1.0,  fatigue = 0.9  },
-    ["Undead"]         = { hunger = 0.1,  thirst = 0.1,  fatigue = 0.7  },  -- undead don't need food/water, but still get tired from body parts decaying
+    ["Undead"]         = { hunger = 1.1,  thirst = 1.1,  fatigue = 1.7  },  -- undead don't need food/water, but still get tired from body parts decaying
     ["Tauren"]         = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.85 },
     ["Troll"]          = { hunger = 1.0,  thirst = 1.1,  fatigue = 1.0  },
     ["BloodElf"]       = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
@@ -164,13 +164,13 @@ ICN2.ARMOR_FATIGUE = {
     CLOTH  = 0.90,
 }
 
--- ── Rest stance fatigue recovery rates (v1.1.2) ───────────────────────────────
--- Player must stay in the stance continuously. Recovery is % per second.
--- /lay  → 100% in 40s  (most restful)
--- /sit  → 100% in 60s  (medium)
--- /kneel→ 100% in 90s  (least restful)
+-- ── Rest stance fatigue recovery rates ───────────────────────────────────────
+-- Retail TWW only exposes UnitIsSitting("player") — no pose distinction.
+-- All seated poses (/sit, /sleep, /kneel) map to "sit" at runtime.
+-- The sleep/kneel entries are kept here for potential Classic support or
+-- a future API that exposes pose granularity.
 ICN2.REST_STANCE_RATES = {
-    sleep   = 100 / 40,   -- 2.500% per second
-    sit     = 100 / 60,   -- 1.667% per second
-    kneel   = 100 / 90,   -- 1.111% per second
+    sleep   = 100 / 40,   -- 2.500% per second (Classic / future use)
+    sit     = 100 / 60,   -- 1.667% per second (active in retail TWW)
+    kneel   = 100 / 90,   -- 1.111% per second (Classic / future use)
 }
