@@ -1,18 +1,23 @@
 -- ============================================================
--- ICN2_HUD.lua  (v1.2.0-beta)
+-- ICN2_HUD.lua
 -- On-screen status bars: hunger, thirst, fatigue.
 -- Draggable, scalable. Supports smooth bar OR blocky 10-block mode.
 --
 -- Frame hierarchy:
---   hudFrame
---    ├─ ICN2Row_hunger   (rowFrame)
---    │   ├─ icon
---    │   ├─ ICN2BarFrame_hunger  (barFrame)
---    │   │   ├─ smoothBG / smoothBar / smoothLabel
---    │   │   └─ block[1..10]: fillTex (BG) + emptyTex (ARTWORK)
---    │   └─ indicator FontString  ← NEW: ⇈ ↑ • ↓ ⇊
---    ├─ ICN2Row_thirst
---    └─ ICN2Row_fatigue
+-- ICN2HUDFrame
+--  ├─ Background
+--  ├─ Bordered border
+--  ├─ Row (hunger)
+--  │   ├─ Icon
+--  │   ├─ BarFrame
+--  │   │   ├─ SmoothBar (StatusBar)
+--  │   │   ├─ SmoothBG (Texture)
+--  │   │   ├─ BlockFrames[1..10]
+--  │   │   │   ├─ Geo (border, bevels, innerBG)
+--  │   │   │   └─ Fill (Texture)
+--  │   └─ Indicator (FontString)
+--  ├─ Row (thirst) — same structure as hunger
+--  └─ Row (fatigue) — same structure as hunger
 -- ============================================================
 
 ICN2 = ICN2 or {}
@@ -21,64 +26,75 @@ local hudFrame
 local bars = {}
 
 -- ── Layout constants ──────────────────────────────────────────────────────────
-local BLOCK_SIZE    = 24
-local BAR_GAP       = 6
-local ICON_SIZE     = 24
-local NUM_BLOCKS    = 10
-local BLOCK_GAP     = 2
-local INDICATOR_W   = 16   -- width reserved for the indicator glyph
+local BLOCK_SIZE  = 24
+local BAR_GAP     = 6
+local ICON_SIZE   = 24
+local NUM_BLOCKS  = 10
+local BLOCK_GAP   = 2
+local INDICATOR_W = 18
 
 local NEED_KEYS = { "hunger", "thirst", "fatigue" }
 
 -- ── Icons ─────────────────────────────────────────────────────────────────────
 local ICONS = {
-    hunger  = "Interface\\Icons\\INV_Misc_Food_15",
-    thirst  = "Interface\\Icons\\INV_Drink_07",
-    fatigue = "Interface\\Icons\\Spell_Nature_Sleep",
+    hunger  = "Interface\\Icons\\inv_misc_food_cooked_greatpabanquet_general",
+    thirst  = "Interface\\Icons\\inv_drink_18_color03",
+    fatigue = "Interface\\Icons\\ui_campcollection",
 }
 
--- ── Atlas config — swap textures here ─────────────────────────────────────────
-local BLOCK_ATLAS = {
-    hunger  = { emptyAtlas = "Relic-Blood-TraitBG", fillColor = { 0.2, 0.9, 0.2 } },
-    thirst  = { emptyAtlas = "Relic-Water-TraitBG", fillColor = { 0.2, 0.5, 1.0 } },
-    fatigue = { emptyAtlas = "Relic-Wind-TraitBG",  fillColor = { 1.0, 0.85, 0.1 } },
+-- ── Bar fill colors ───────────────────────────────────────────────────────────
+-- Atlas textures removed — blocks use a pure 3D geometry look.
+local BLOCK_COLORS = {
+    hunger  = { 0.2, 0.9,  0.2 },
+    thirst  = { 0.2, 0.5,  1.0 },
+    fatigue = { 1.0, 0.85, 0.1 },
 }
 
 -- ── Indicator thresholds (% per second) ──────────────────────────────────────
--- These define when to switch between indicator glyphs.
-local IND_FAST_UP       =  0.50   -- >>  fast recovery
-local IND_UP            =  0.05   -- >  slow recovery
-local IND_STABLE_UP     =  0.00   -- >=  stable to slow recovery
-local IND_STABLE_DOWN   =  0.00   -- =<  stable to slow decay
-local IND_DOWN          = -0.05   -- <  slow decay
-local IND_FAST_DOWN     = -0.50   -- <<  fast decay
+local IND_FASTER_UP     =  1.00
+local IND_FAST_UP       =  0.30
+local IND_UP            =  0.00
+local IND_DOWN          =  0.00
+local IND_FAST_DOWN     = -0.30
+local IND_FASTER_DOWN   = -1.00
+
+-- ── Indicator pulse animation ─────────────────────────────────────────────────
+-- Indicators pulse when the net rate is changing in a direction that would cross a threshold
+-- The neutral glyph (##) stays dim and static — no pulse.
+local PULSE_PERIOD = 2.00 -- seconds for a full pulse cycle (min → max → min)
+local PULSE_MIN    = 0.25 -- minimum alpha for pulse (at trough)
+local PULSE_MAX    = 1.00 -- maximum alpha for pulse (at peak)
+
+local function shouldPulse(glyph)
+    return glyph == "<" or glyph == "<<" or glyph == ">" or glyph == ">>"
+end
 
 -- ── Color helper ──────────────────────────────────────────────────────────────
 local function getNeedColor(key, val)
     if val <= ICN2.THRESHOLDS.critical then return 0.9, 0.1, 0.1
     elseif val <= ICN2.THRESHOLDS.low  then return 0.9, 0.6, 0.1
     else
-        local fc = BLOCK_ATLAS[key].fillColor
+        local fc = BLOCK_COLORS[key]
         return fc[1], fc[2], fc[3]
     end
 end
 
--- ── Indicator glyph + color from net rate ────────────────────────────────────
+-- ── Indicator glyph + color from net rate ─────────────────────────────────────
 local function getIndicator(rate)
-    if rate >= IND_FAST_UP then
-        return ">>", 0.1, 0.9, 0.1      -- >> bright green
+    if rate >= IND_FASTER_UP then
+        return ">>>", 0.0, 1.0, 0.0 -- pure green for very fast positive rates
+    elseif rate >= IND_FAST_UP then
+        return ">>", 0.2, 0.9, 0.1 -- bright green for moderate positive rates
     elseif rate >= IND_UP then
-        return ">", 0.4, 0.9, 0.4       -- > green
-    elseif rate > IND_STABLE_UP then
-        return ">=", 0.55, 0.55, 0.55    -- >= gray
-    elseif rate < IND_STABLE_DOWN then
-        return "=<", 0.55, 0.55, 0.55    -- =< gray
+        return ">",  0.7, 0.9, 0.4 -- light green for slow positive rates
     elseif rate < IND_DOWN then
-    return "<", 0.9, 0.6, 0.1           -- < orange
+        return "<",  0.9, 0.7, 0.1 -- orange for slow negative rates
     elseif rate < IND_FAST_DOWN then
-        return "<<", 0.9, 0.1, 0.1      -- << red
+        return "<<", 0.9, 0.2, 0.1 -- red-orange for moderate negative rates
+    elseif rate < IND_FASTER_DOWN then
+        return "<<<", 1.0, 0.0, 0.0 -- pure red for very fast negative rates
     else
-        return "##", 0, 0, 0            -- ## black fallback
+        return "##", 1.0, 1.0, 1.0 -- white as fallback (should never happen)
     end
 end
 
@@ -90,7 +106,6 @@ function ICN2:BuildHUD()
     local frameW = ICON_SIZE + 4 + barW + INDICATOR_W + 14
     local frameH = (BLOCK_SIZE + BAR_GAP) * #NEED_KEYS + 14
 
-    -- Root container
     hudFrame = CreateFrame("Frame", "ICN2HUDFrame", UIParent)
     hudFrame:SetSize(frameW, frameH)
     hudFrame:SetFrameStrata("MEDIUM")
@@ -136,25 +151,21 @@ function ICN2:BuildHUD()
     end)
     hudFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Build rows
+    -- ── Build rows ────────────────────────────────────────────────────────────
     for i, key in ipairs(NEED_KEYS) do
-        local atlas = BLOCK_ATLAS[key]
-        local fc    = atlas.fillColor
+        local fc = BLOCK_COLORS[key]
 
-        -- Row container
         local rowFrame = CreateFrame("Frame", "ICN2Row_" .. key, hudFrame)
         rowFrame:SetSize(frameW - 8, BLOCK_SIZE)
         rowFrame:SetPoint("TOPLEFT", hudFrame, "TOPLEFT",
             4, -((i - 1) * (BLOCK_SIZE + BAR_GAP)) - 7)
 
-        -- Icon
         local icon = rowFrame:CreateTexture(nil, "ARTWORK")
         icon:SetSize(ICON_SIZE, ICON_SIZE)
         icon:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
         icon:SetTexture(ICONS[key])
         icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
-        -- barFrame
         local barFrame = CreateFrame("Frame", "ICN2BarFrame_" .. key, rowFrame)
         barFrame:SetSize(barW, BLOCK_SIZE)
         barFrame:SetPoint("LEFT", rowFrame, "LEFT", ICON_SIZE + 4, 0)
@@ -175,32 +186,84 @@ function ICN2:BuildHUD()
         smoothLabel:SetPoint("RIGHT", smoothBar, "RIGHT", -3, 0)
         smoothLabel:SetText("100%")
 
-        -- Blocky blocks
+        -- ── Blocky blocks — 3D bevelled, no atlas textures ────────────────────
+        -- ALL geometry textures start hidden. ApplyBarMode is the sole
+        -- authority for showing/hiding them, which prevents the block shells
+        -- from bleeding through behind the smooth bar when blocky mode is off.
+        local BEVEL = 1
+        local INSET = 2
+
         local blockFrames = {}
         for b = 1, NUM_BLOCKS do
             local bx = (b - 1) * (BLOCK_SIZE + BLOCK_GAP)
 
-            local fillTex = barFrame:CreateTexture(nil, "BACKGROUND")
-            fillTex:SetSize(BLOCK_SIZE, BLOCK_SIZE)
-            fillTex:SetPoint("TOPLEFT", barFrame, "TOPLEFT", bx, 0)
-            fillTex:SetColorTexture(fc[1], fc[2], fc[3], 0.85)
+            local borderTex = barFrame:CreateTexture(nil, "BACKGROUND")
+            borderTex:SetSize(BLOCK_SIZE, BLOCK_SIZE)
+            borderTex:SetPoint("TOPLEFT", barFrame, "TOPLEFT", bx, 0)
+            borderTex:SetColorTexture(0.05, 0.05, 0.05, 1.0)
+            borderTex:Hide()
+
+            local bevelTop = barFrame:CreateTexture(nil, "BORDER")
+            bevelTop:SetPoint("TOPLEFT",     barFrame, "TOPLEFT", bx + BEVEL,              -BEVEL)
+            bevelTop:SetPoint("BOTTOMRIGHT", barFrame, "TOPLEFT", bx + BLOCK_SIZE - BEVEL, -(BEVEL + 1))
+            bevelTop:SetColorTexture(0.55, 0.55, 0.55, 0.9)
+            bevelTop:Hide()
+
+            local bevelLeft = barFrame:CreateTexture(nil, "BORDER")
+            bevelLeft:SetPoint("TOPLEFT",     barFrame, "TOPLEFT", bx + BEVEL,     -BEVEL)
+            bevelLeft:SetPoint("BOTTOMRIGHT", barFrame, "TOPLEFT", bx + BEVEL + 1, -(BLOCK_SIZE - BEVEL))
+            bevelLeft:SetColorTexture(0.55, 0.55, 0.55, 0.9)
+            bevelLeft:Hide()
+
+            local bevelBottom = barFrame:CreateTexture(nil, "BORDER")
+            bevelBottom:SetPoint("TOPLEFT",     barFrame, "TOPLEFT", bx + BEVEL,              -(BLOCK_SIZE - BEVEL - 1))
+            bevelBottom:SetPoint("BOTTOMRIGHT", barFrame, "TOPLEFT", bx + BLOCK_SIZE - BEVEL, -(BLOCK_SIZE - BEVEL))
+            bevelBottom:SetColorTexture(0.0, 0.0, 0.0, 0.9)
+            bevelBottom:Hide()
+
+            local bevelRight = barFrame:CreateTexture(nil, "BORDER")
+            bevelRight:SetPoint("TOPLEFT",     barFrame, "TOPLEFT", bx + BLOCK_SIZE - BEVEL - 1, -BEVEL)
+            bevelRight:SetPoint("BOTTOMRIGHT", barFrame, "TOPLEFT", bx + BLOCK_SIZE - BEVEL,     -(BLOCK_SIZE - BEVEL))
+            bevelRight:SetColorTexture(0.0, 0.0, 0.0, 0.9)
+            bevelRight:Hide()
+
+            local innerBG = barFrame:CreateTexture(nil, "ARTWORK")
+            innerBG:SetPoint("TOPLEFT",     barFrame, "TOPLEFT", bx + INSET,              -INSET)
+            innerBG:SetPoint("BOTTOMRIGHT", barFrame, "TOPLEFT", bx + BLOCK_SIZE - INSET, -(BLOCK_SIZE - INSET))
+            innerBG:SetColorTexture(0.10, 0.10, 0.10, 1.0)
+            innerBG:Hide()
+
+            local fillTex = barFrame:CreateTexture(nil, "OVERLAY")
+            fillTex:SetPoint("TOPLEFT",     barFrame, "TOPLEFT", bx + INSET,              -INSET)
+            fillTex:SetPoint("BOTTOMRIGHT", barFrame, "TOPLEFT", bx + BLOCK_SIZE - INSET, -(BLOCK_SIZE - INSET))
+            fillTex:SetColorTexture(fc[1], fc[2], fc[3], 0.90)
             fillTex:Hide()
 
-            local emptyTex = barFrame:CreateTexture(nil, "ARTWORK")
-            emptyTex:SetSize(BLOCK_SIZE, BLOCK_SIZE)
-            emptyTex:SetPoint("TOPLEFT", barFrame, "TOPLEFT", bx, 0)
-            emptyTex:SetAtlas(atlas.emptyAtlas)
-            emptyTex:Hide()
-
-            blockFrames[b] = { fill = fillTex, empty = emptyTex }
+            blockFrames[b] = {
+                fill = fillTex, -- the colored fill that gets shown/hidden based on value
+                geo  = { borderTex, bevelTop, bevelLeft, bevelBottom, bevelRight, innerBG }, -- the geometry textures that are shown/hidden as a group based on bar mode
+            }
         end
 
-        -- ── Indicator (right of barFrame, inside rowFrame) ────────────────────
-        -- Anchored to the RIGHT of rowFrame so it never overlaps the bar.
+        -- ── Indicator + pulse driver ──────────────────────────────────────────
         local indicator = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         indicator:SetPoint("RIGHT", rowFrame, "RIGHT", -2, 0)
-        indicator:SetText("•")           -- starts as • (stable)
-        indicator:SetTextColor(0.55, 0.55, 0.55)
+        indicator:SetText("##")
+        indicator:SetTextColor(0.3, 0.3, 0.3)
+        indicator:SetAlpha(1.0)
+
+        local pulseFrame   = CreateFrame("Frame", nil, rowFrame)
+        local pulseElapsed = 0
+        local pulseRunning = false
+
+        pulseFrame:SetScript("OnUpdate", function(_, dt)
+            if not pulseRunning then return end
+            pulseElapsed = pulseElapsed + dt
+            local t = (pulseElapsed % PULSE_PERIOD) / PULSE_PERIOD
+            local a = PULSE_MIN + (PULSE_MAX - PULSE_MIN)
+                      * (0.5 + 0.5 * math.sin(t * math.pi * 2 - math.pi / 2))
+            indicator:SetAlpha(a)
+        end)
 
         bars[key] = {
             rowFrame    = rowFrame,
@@ -210,10 +273,17 @@ function ICN2:BuildHUD()
             smoothLabel = smoothLabel,
             blocks      = blockFrames,
             indicator   = indicator,
+            setPulse    = function(active)
+                pulseRunning = active
+                if not active then
+                    pulseElapsed = 0
+                    indicator:SetAlpha(1.0)
+                end
+            end,
         }
     end
 
-    -- Add command buttons for testing
+    -- ── Command buttons ───────────────────────────────────────────────────────
     local cmdButton1 = CreateFrame("Button", "ICN2CmdButton1", hudFrame, "UIPanelButtonTemplate")
     cmdButton1:SetSize(24, 24)
     cmdButton1:SetPoint("TOPRIGHT", hudFrame, "TOPRIGHT", 0, 24)
@@ -237,6 +307,9 @@ function ICN2:BuildHUD()
 end
 
 -- ── ApplyBarMode ──────────────────────────────────────────────────────────────
+-- Sole authority for showing/hiding block geometry.
+-- Smooth mode → all block geo hidden, smooth bar shown.
+-- Blocky mode → smooth bar hidden, block geo shown (fill toggled in UpdateHUD).
 function ICN2:ApplyBarMode()
     if not hudFrame then return end
     local blocky = ICN2DB.settings.blockyBars
@@ -248,14 +321,16 @@ function ICN2:ApplyBarMode()
                 data.smoothBar:Hide()
                 data.smoothBG:Hide()
                 data.smoothLabel:Hide()
-                for _, bf in ipairs(data.blocks) do bf.empty:Show() end
+                for _, bf in ipairs(data.blocks) do
+                    for _, tex in ipairs(bf.geo) do tex:Show() end
+                end
             else
                 data.smoothBar:Show()
                 data.smoothBG:Show()
                 data.smoothLabel:Show()
                 for _, bf in ipairs(data.blocks) do
                     bf.fill:Hide()
-                    bf.empty:Hide()
+                    for _, tex in ipairs(bf.geo) do tex:Hide() end
                 end
             end
         end
@@ -269,7 +344,6 @@ function ICN2:UpdateHUD()
     hudFrame:Show()
 
     local values = { hunger = ICN2DB.hunger, thirst = ICN2DB.thirst, fatigue = ICN2DB.fatigue }
-    -- Calculate current rates in real-time for accurate indicators
     local rates  = ICN2:GetCurrentRates()
     local blocky = ICN2DB.settings.blockyBars
 
@@ -279,13 +353,12 @@ function ICN2:UpdateHUD()
             local val     = values[key] or 0
             local r, g, b = getNeedColor(key, val)
 
-            -- Bar / blocks
             if blocky then
-                local filled = (val >= 100) and 10 or math.floor(val / 10)
+                local filled = (val >= 100) and NUM_BLOCKS or math.floor(val / 10)
                 for b = 1, NUM_BLOCKS do
                     local bf = data.blocks[b]
                     if b <= filled then
-                        bf.fill:SetColorTexture(r, g, b, 0.85)
+                        bf.fill:SetColorTexture(r, g, b, 0.90)
                         bf.fill:Show()
                     else
                         bf.fill:Hide()
@@ -297,10 +370,10 @@ function ICN2:UpdateHUD()
                 data.smoothLabel:SetText(string.format("%.0f%%", val))
             end
 
-            -- ── Indicator ─────────────────────────────────────────────────────
             local glyph, ir, ig, ib = getIndicator(rates[key] or 0)
             data.indicator:SetText(glyph)
             data.indicator:SetTextColor(ir, ig, ib)
+            data.setPulse(shouldPulse(glyph))
         end
     end
 end

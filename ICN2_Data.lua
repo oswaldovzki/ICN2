@@ -30,7 +30,7 @@ ICN2.DEFAULTS = {
         hudEnabled   = true,
         hudLocked    = false,
         hudScale     = 1.0,
-        hudAlpha     = 0.9,
+        hudAlpha     = 1.0,   -- overall transparency of the HUD (0-1)
         hudX         = nil,   -- set dynamically on first load
         hudY         = nil,
 
@@ -57,8 +57,8 @@ ICN2.PRESETS = {
     fast      = 3.0,
     medium    = 1.0,
     slow      = 0.5,
-    realistic = 0.15,
-    custom    = 1.0,  -- user sets their own rates directly
+    realistic = 0.15
+    -- custom    = 1.0,  -- user sets their own rates directly
 }
 
 -- ── Situational decay multipliers ─────────────────────────────────────────────
@@ -70,7 +70,7 @@ ICN2.SITUATION_MODIFIERS = {
     mounted    = { hunger = 0.8, thirst = 0.9, fatigue = 0.5 },
     resting    = { hunger = 0.5, thirst = 0.6, fatigue = 0.2 },
     combat     = { hunger = 1.2, thirst = 1.3, fatigue = 1.5 },
-    indoors    = { hunger = 0.9, thirst = 0.9, fatigue = 0.9 },
+    indoors    = { hunger = 1.0, thirst = 1.0, fatigue = 0.8 },
     -- default (walking/idle outdoors) = 1.0 multiplier
 }
 
@@ -79,7 +79,7 @@ ICN2.SITUATION_MODIFIERS = {
 ICN2.RACE_MODIFIERS = {
     -- Horde
     ["Orc"]            = { hunger = 0.9,  thirst = 1.0,  fatigue = 0.9  },
-    ["Undead"]         = { hunger = 1.1,  thirst = 1.1,  fatigue = 1.7  },  -- undead don't need food/water, but still get tired from body parts decaying
+    ["Undead"]         = { hunger = 0.1,  thirst = 0.1,  fatigue = 0.8  },  -- undead don't need food/water, but still get tired from body parts decaying
     ["Tauren"]         = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.85 },
     ["Troll"]          = { hunger = 1.0,  thirst = 1.1,  fatigue = 1.0  },
     ["BloodElf"]       = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
@@ -158,19 +158,48 @@ ICN2.THRESHOLDS = {
 
 -- ── Armor type fatigue multipliers ────────────────────────────────────────────
 ICN2.ARMOR_FATIGUE = {
-    PLATE  = 1.20,
-    MAIL   = 1.10,
-    LEATHER= 1.00,
-    CLOTH  = 0.90,
+    PLATE  = 1.20, -- heaviest armor causes more fatigue
+    MAIL   = 1.10, -- medium armor has a moderate effect
+    LEATHER= 1.00, -- light armor has no additional fatigue
+    CLOTH  = 0.90, -- cloth armor is comfortable and breathable. Default fallback.
 }
 
--- ── Rest stance fatigue recovery rates ───────────────────────────────────────
--- Retail TWW only exposes UnitIsSitting("player") — no pose distinction.
--- All seated poses (/sit, /sleep, /kneel) map to "sit" at runtime.
--- The sleep/kneel entries are kept here for potential Classic support or
--- a future API that exposes pose granularity.
-ICN2.REST_STANCE_RATES = {
-    sleep   = 100 / 40,   -- 2.500% per second (Classic / future use)
-    sit     = 100 / 60,   -- 1.667% per second (active in retail TWW)
-    kneel   = 100 / 90,   -- 1.111% per second (Classic / future use)
+-- ── Fatigue recovery rates (% per second) ────────────────────────────────────
+-- Recovery only applies when NOT in combat and NOT mounted.
+--
+-- Tiers:
+--   slow  — any single condition (sitting, campfire, eating/drinking)
+--   fast  — rested area AND (campfire OR housing)
+--
+-- "rested area"  = IsResting() returns true (inn, city, garrison, etc.)
+-- "campfire"     = player has a Cozy Fire / campfire aura (see CAMPFIRE_PATTERNS)
+-- "eating/drink" = ICN2:IsEating() or ICN2:IsDrinking()
+-- "housing"      = player is in their housing neighborhood or plot
+--
+-- These values are intentionally modest — fatigue is meant to be the
+-- hardest need to recover, requiring deliberate downtime and helps with
+-- taking IRL rest time on longer play sessions.
+ICN2.FATIGUE_RECOVERY = {
+    slow = 100 / 300,   -- 0.333% per second → full bar in ~5 minutes
+    fast = 100 / 120,   -- 0.833% per second → full bar in ~2 minutes
+}
+
+-- ── Aura patterns for campfire / cozy fire detection ─────────────────────────
+-- Matched against buff names on the player.
+ICN2.CAMPFIRE_PATTERNS = {
+    "cozy fire",
+    "campfire",
+    "warmth of the fire",
+    "bonfire",
+}
+
+-- ── Housing zone detection ────────────────────────────────────────────────────
+-- We primarily detect housing via the Cozy Fire aura; the map list below is
+-- a fallback for when the buff hasn't applied yet.
+-- Map IDs will need updating as Blizzard adds more housing zones.
+ICN2.HOUSING_MAP_IDS = {
+    [2736] = true,  -- Housing neighborhood (Razorwind Shores)
+    [3027] = true,  -- Warband Housing neighborhood (Razorwind Shores)
+    [2735] = true,   -- Housing neighborhood (Founders Point)
+    [3026] = true  -- Warband Housing neighborhood (Founders Point)
 }

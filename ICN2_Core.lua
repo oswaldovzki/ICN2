@@ -14,9 +14,23 @@ local elapsed      = 0
 local inCombat   = false
 local isSwimming = false
 
--- Rest stance: "sit" or nil. Set by DetectRestStance() each tick.
--- Retail TWW only exposes UnitIsSitting("player") — no pose granularity.
-local restStance = nil
+-- Fatigue recovery state — evaluated each tick by DetectFatigueRecovery().
+-- isSitting:    true when the player's /sit aura is detected (see below).
+-- nearCampfire: true when the player has a campfire/cozy-fire buff.
+-- inHousing:    true when the player is in a housing zone/plot.
+-- Any of these can stack; the tier (slow vs fast) is resolved in
+-- calculateCurrentRates() based on the combination.
+local isSitting    = false
+local nearCampfire = false
+local inHousing    = false
+
+-- ── Why aura-based sitting detection? ────────────────────────────────────────
+-- UnitIsSitting("player") was removed in Retail 12.0 (TWW pre-patch).
+-- The replacement approach scans the player's HELPFUL auras for the
+-- "Restful" buff that WoW silently applies when /sit, /sleep, or /kneel
+-- is used in a non-combat, non-mounted context.
+-- Fallback: if the aura is never found, isSitting stays false — safe default.
+local SIT_AURA_PATTERNS = { "restful", "resting", "sitting" }
 
 -- Cached armor fatigue modifier. Populated on PLAYER_LOGIN and whenever
 -- the chest slot changes (PLAYER_EQUIPMENT_CHANGED). Avoids calling
@@ -27,6 +41,10 @@ local armorFatigueCache = nil
 -- Last computed net rates (% per second). Positive = gaining, negative = losing.
 ICN2._lastRates             = { hunger = 0, thirst = 0, fatigue = 0 }
 ICN2._lastWellFedInstanceID = nil
+
+-- Last computed fatigue recovery tier string (for /icn2 details output).
+ICN2._fatigueRecoveryTier = "none"  -- "none" | "slow" | "fast"
+ICN2._fatigueRecoverySrc  = ""      -- human-readable source list
 
 -- ── Deep copy ─────────────────────────────────────────────────────────────────
 local function deepCopy(orig)
@@ -90,6 +108,8 @@ local function refreshArmorCache()
     
     -- WoW 12.0 Retail: Use GetItemInfo() global function which returns:
     -- name, link, rarity, level, minLevel, type, subType, stackCount, texture, vendorPrice
+    -- GetItemInfo is still the way to get item subtype in WoW 12.0, despite deprecation warning
+---@diagnostic disable-next-line: deprecated
     local name, _, _, _, _, itemType, subType = GetItemInfo(itemLink)
     
     if not subType then
@@ -166,35 +186,83 @@ local function getSituationMultipliers(collectLabels)
 end
 
 -- ── Calculate current net rates ───────────────────────────────────────────────
+-- Fatigue recovery tiers (evaluated in priority order):
+--
+--   FAST  → IsResting() AND (nearCampfire OR inHousing)
+--           Best possible rest: inn/city + warmth or home.
+--
+--   SLOW  → any single condition:
+--             • isSitting  (detected via sit aura, see DetectFatigueRecovery)
+--             • nearCampfire (Cozy Fire / campfire buff)
+--             • IsEating() or IsDrinking() (implies seated, out of combat)
+--             • IsResting() alone (inn/city without extras)
+--             • inHousing alone
+--
+--   NONE  → none of the above (active play, combat, mounted, etc.)
+--
+-- Depletion rules are unchanged — race/class/situation/armor modifiers
+-- still stack on top of the base decay rate.
 local function calculateCurrentRates()
-    local s        = ICN2DB.settings
-    local preset   = ICN2.PRESETS[s.preset] or 1.0
+    local s      = ICN2DB.settings
+    local preset = ICN2.PRESETS[s.preset] or 1.0
     local mH, mT, mF = getSituationMultipliers()
-    local armor    = armorFatigueCache or ICN2.ARMOR_FATIGUE.CLOTH
+    local armor  = armorFatigueCache or ICN2.ARMOR_FATIGUE.CLOTH
 
+    -- Base decay per second
     local dH = s.decayRates.hunger  * preset * mH
     local dT = s.decayRates.thirst  * preset * mT
     local dF = s.decayRates.fatigue * preset * mF * armor
 
-    local stanceGain = (restStance and ICN2.REST_STANCE_RATES[restStance] or 0)
-    
-    -- Include recovery rates from eating/drinking
-    local foodRecovery = 0
+    -- ── Fatigue recovery ─────────────────────────────────────────────────────
+    -- No recovery in combat or while mounted — those block sitting too.
+    local fatigueGain = 0
+    local tier        = "none"
+    local src         = {}
+
+    if not inCombat and not IsMounted() then
+        local isResting  = IsResting() and true or false
+        local isEatDrink = ICN2:IsEating() or ICN2:IsDrinking()
+
+        -- Fast tier: rested area + campfire/housing
+        if isResting and (nearCampfire or inHousing) then
+            fatigueGain = ICN2.FATIGUE_RECOVERY.fast
+            tier        = "fast"
+            table.insert(src, "rested area")
+            if nearCampfire then table.insert(src, "campfire") end
+            if inHousing    then table.insert(src, "housing")  end
+
+        -- Slow tier: any single qualifying condition
+        elseif isResting or isSitting or nearCampfire or inHousing or isEatDrink then
+            fatigueGain = ICN2.FATIGUE_RECOVERY.slow
+            tier        = "slow"
+            if isResting  then table.insert(src, "rested area") end
+            if isSitting  then table.insert(src, "sitting")     end
+            if nearCampfire then table.insert(src, "campfire")  end
+            if inHousing  then table.insert(src, "housing")     end
+            if isEatDrink then table.insert(src, "eating/drinking") end
+        end
+    end
+
+    -- Cache for PrintDetails / HUD indicator
+    ICN2._fatigueRecoveryTier = tier
+    ICN2._fatigueRecoverySrc  = table.concat(src, ", ")
+
+    -- ── Food/drink recovery for hunger/thirst ────────────────────────────────
+    local foodRecovery  = 0
     local drinkRecovery = 0
-    
     if ICN2:IsEating() then
         local duration = ICN2:GetFoodDuration() or 30
-        foodRecovery = 50.0 / math.max(1, duration)  -- FULL_SESSION_RESTORE / duration
+        foodRecovery = 50.0 / math.max(1, duration)
     end
     if ICN2:IsDrinking() then
         local duration = ICN2:GetDrinkDuration() or 30
-        drinkRecovery = 50.0 / math.max(1, duration)  -- FULL_SESSION_RESTORE / duration
+        drinkRecovery = 50.0 / math.max(1, duration)
     end
-    
+
     return {
         hunger  = foodRecovery - dH,
         thirst  = drinkRecovery - dT,
-        fatigue = stanceGain - dF,
+        fatigue = fatigueGain - dF,
     }
 end
 
@@ -210,10 +278,12 @@ local function tick()
     local oldF = ICN2DB.fatigue
 
     local rates = calculateCurrentRates()
-    
-    ICN2DB.hunger  = math.max(0, ICN2DB.hunger  + rates.hunger)
-    ICN2DB.thirst  = math.max(0, ICN2DB.thirst  + rates.thirst)
-    ICN2DB.fatigue = math.max(0, ICN2DB.fatigue + rates.fatigue)
+
+    -- Hard clamp: min 0, max 100. The max guard prevents any fractional
+    -- overshoot (e.g. Well Fed firing mid-tick while eating).
+    ICN2DB.hunger  = math.max(0, math.min(100, ICN2DB.hunger  + rates.hunger))
+    ICN2DB.thirst  = math.max(0, math.min(100, ICN2DB.thirst  + rates.thirst))
+    ICN2DB.fatigue = math.max(0, math.min(100, ICN2DB.fatigue + rates.fatigue))
 
     ICN2._lastRates = rates
 
@@ -270,8 +340,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
         ICN2DB.lastLogout = time()
 
     elseif event == "PLAYER_REGEN_DISABLED" then
-        inCombat   = true
-        restStance = nil
+        inCombat  = true
+        -- DetectFatigueRecovery will clear isSitting/nearCampfire on the next tick
+        -- because the inCombat guard fires first. No restStance to clear.
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         inCombat = false
@@ -299,34 +370,61 @@ frame:SetScript("OnUpdate", function(self, dt)
     if elapsed >= tickInterval then
         elapsed = 0
         isSwimming = (IsSubmerged and IsSubmerged()) and true or false
-        ICN2:DetectRestStance()
+        ICN2:DetectFatigueRecovery()
         ICN2:FoodDrinkTick()
         ICN2:RestStanceTick()
         tick()
     end
 end)
 
--- ── Rest stance detection ─────────────────────────────────────────────────────
--- Retail: UnitIsSitting("player") returns true for any seated pose.
--- No API exists to distinguish sit/sleep/kneel in retail, so all map to "sit".
--- Note: UnitIsSitting was removed in Retail 12.0, check if function exists.
-function ICN2:DetectRestStance()
+-- ── Fatigue recovery condition detection ─────────────────────────────────────
+-- Called every tick. Updates the three module-local flags:
+--   isSitting    — player has the sit/rest aura
+--   nearCampfire — player has a campfire/cozy-fire buff
+--   inHousing    — player is in a housing zone
+function ICN2:DetectFatigueRecovery()
+    -- Hard blocks — nothing recovers while in combat or mounted
     if inCombat or IsMounted() then
-        restStance = nil
+        isSitting    = false
+        nearCampfire = false
+        -- Note: inHousing intentionally not cleared — the zone doesn't change
+        -- just because you enter combat.
         return
     end
-    -- SafelyCheck if UnitIsSitting exists before calling it
-    if UnitIsSitting then
-        restStance = UnitIsSitting("player") and "sit" or nil
-    else
-        restStance = nil
+
+    -- Scan player buffs once and check all patterns in one pass
+    local sitFound      = false
+    local campfireFound = false
+    local i = 1
+    while true do
+        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
+        if not aura then break end
+        local lower = aura.name and string.lower(aura.name) or ""
+
+        if not sitFound then
+            for _, p in ipairs(SIT_AURA_PATTERNS) do
+                if lower:find(p, 1, true) then sitFound = true; break end
+            end
+        end
+        if not campfireFound then
+            for _, p in ipairs(ICN2.CAMPFIRE_PATTERNS) do
+                if lower:find(p, 1, true) then campfireFound = true; break end
+            end
+        end
+        if sitFound and campfireFound then break end  -- no need to scan further
+        i = i + 1
     end
+
+    isSitting    = sitFound
+    nearCampfire = campfireFound
+
+    -- Housing detection: campfire buff is the primary signal. Map ID is a belt-and-suspenders fallback.
+    local mapID = C_Map.GetBestMapForUnit("player")
+    inHousing = campfireFound or (mapID ~= nil and ICN2.HOUSING_MAP_IDS[mapID] == true)
 end
 
--- ── Fatigue recovery tick ─────────────────────────────────────────────────────
+-- ── Fatigue stance tick (stub) ────────────────────────────────────────────────
 function ICN2:RestStanceTick()
-    -- Recovery now handled entirely through rate calculations in the main tick
-    -- This function is kept for potential future features
 end
 
 -- ── Racial / class ability recovery ──────────────────────────────────────────
@@ -351,13 +449,17 @@ function ICN2:PrintDetails()
     local dH = s.decayRates.hunger  * preset * mH
     local dT = s.decayRates.thirst  * preset * mT
     local dF = s.decayRates.fatigue * preset * mF * armor
-    local stanceGain = (restStance and ICN2.REST_STANCE_RATES[restStance] or 0)
 
     local armorName = "CLOTH"
     if     armor == ICN2.ARMOR_FATIGUE.PLATE   then armorName = "PLATE"
     elseif armor == ICN2.ARMOR_FATIGUE.MAIL    then armorName = "MAIL"
     elseif armor == ICN2.ARMOR_FATIGUE.LEATHER then armorName = "LEATHER"
     end
+
+    -- Fatigue recovery gain from current tier
+    local fatigueGain = (ICN2._fatigueRecoveryTier == "fast" and ICN2.FATIGUE_RECOVERY.fast)
+                     or (ICN2._fatigueRecoveryTier == "slow" and ICN2.FATIGUE_RECOVERY.slow)
+                     or 0
 
     local P   = "|cFFFF6600ICN2|r"
     local sep = "|cFF555555--------------------------------|r"
@@ -366,7 +468,8 @@ function ICN2:PrintDetails()
     print(sep)
     print(string.format(P .. " |cFF00FF00Hunger|r  %.1f%%  net %+.4f%%/s",  ICN2DB.hunger,  rates.hunger))
     print(string.format(P .. " |cFF4499FFThirst|r  %.1f%%  net %+.4f%%/s",  ICN2DB.thirst,  rates.thirst))
-    print(string.format(P .. " |cFFFFDD00Fatigue|r %.1f%%  net %+.4f%%/s  (stance %+.4f/s)", ICN2DB.fatigue, rates.fatigue, stanceGain))
+    print(string.format(P .. " |cFFFFDD00Fatigue|r %.1f%%  net %+.4f%%/s  (recovery %+.4f/s [%s])",
+        ICN2DB.fatigue, rates.fatigue, fatigueGain, ICN2._fatigueRecoveryTier))
     print(sep)
     print(P .. " |cFFAAAAAASituation modifiers:|r")
     if #situLabels == 0 then
@@ -375,8 +478,9 @@ function ICN2:PrintDetails()
         for _, lbl in ipairs(situLabels) do print("  |cFFCCCCCC" .. lbl .. "|r") end
     end
     print(string.format("  |cFFCCCCCCarmor:%s (F x%.2f)|r", armorName, armor))
-    if restStance then
-        print(string.format("  |cFFCCCCCCstance:%s (+%.4f%%/s fatigue)|r", restStance, stanceGain))
+    if ICN2._fatigueRecoveryTier ~= "none" then
+        print(string.format("  |cFFCCCCCCfatigue recovery: %s — sources: %s|r",
+            ICN2._fatigueRecoveryTier, ICN2._fatigueRecoverySrc ~= "" and ICN2._fatigueRecoverySrc or "n/a"))
     end
     print(sep)
     if ICN2:IsEating()   then print(P .. " |cFF00FF00Currently eating|r")   end

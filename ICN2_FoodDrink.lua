@@ -115,16 +115,35 @@ function ICN2:OnUnitAura()
     end
 
     -- Well Fed aura — one-shot per unique auraInstanceID
+    -- Only restores the need matching what the player is currently doing:
+    --   eating  → hunger to 100%
+    --   drinking → thirst to 100%
+    -- Hard cap at 100 prevents the brief >100 overshoot that was visible
+    -- when the buff fired mid-tick before the eating state cleared.
     local wellFedAura = findAura(WELLFED_PATTERNS)
     if wellFedAura then
         local id = wellFedAura.auraInstanceID or 0
         if id ~= ICN2._lastWellFedInstanceID then
             ICN2._lastWellFedInstanceID = id
-            ICN2DB.hunger = 100.0
-            ICN2DB.thirst = 100.0
+            local restoredMsg = ""
+            if foodState.active then
+                ICN2DB.hunger = 100.0
+                ICN2:TriggerEmote("satisfied", "hunger")
+                restoredMsg = restoredMsg .. " |cFF00FF00Hunger|r"
+            end
+            if drinkState.active then
+                ICN2DB.thirst = 100.0
+                ICN2:TriggerEmote("satisfied", "thirst")
+                restoredMsg = restoredMsg .. " |cFF4499FFThirst|r"
+            end
+            -- Hard cap — guards against any tick that applied partial recovery
+            -- in the same frame, pushing the value fractionally over 100.
+            ICN2DB.hunger  = math.min(100.0, ICN2DB.hunger)
+            ICN2DB.thirst  = math.min(100.0, ICN2DB.thirst)
             ICN2:UpdateHUD()
-            ICN2:TriggerEmote("satisfied", "hunger")
-            print("|cFFFF6600ICN2|r |cFF00FF00Well Fed!|r Hunger and Thirst set to 100%%.")
+            if restoredMsg ~= "" then
+                print("|cFFFF6600ICN2|r |cFF00FF00Well Fed!|r" .. restoredMsg .. " set to 100%%.")
+            end
         end
     else
         ICN2._lastWellFedInstanceID = nil

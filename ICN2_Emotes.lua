@@ -19,6 +19,8 @@ local function fireEmote(emoteCmd)
     if not ICN2DB.settings.emotesEnabled then return end
     -- Strip leading slash and use DoEmote
     local token = emoteCmd:upper():sub(2)  -- "/yawn" → "YAWN"
+    -- DoEmote is a global function provided by WoW API
+---@diagnostic disable-next-line: undefined-global
     DoEmote(token)
 end
 
