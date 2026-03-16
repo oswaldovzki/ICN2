@@ -16,3 +16,4 @@ ICN2_FoodDrink.lua
 ICN2_Emotes.lua
 ICN2_HUD.lua
 ICN2_Options.lua
+ICN2_Debug.lua

@@ -64,7 +64,7 @@ end
 function ICN2:BuildOptions()
     -- v1.1: taller frame to accommodate two new sections
     optFrame = CreateFrame("Frame", "ICN2OptionsFrame", UIParent, "BasicFrameTemplateWithInset")
-    optFrame:SetSize(450, 600) -- wider and taller than default to fit new options
+    optFrame:SetSize(450, 660)
     optFrame:SetPoint("CENTER")
     optFrame:SetFrameStrata("HIGH")
     optFrame:SetMovable(true)
@@ -74,7 +74,7 @@ function ICN2:BuildOptions()
     optFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
     optFrame:Hide()
 
-    optFrame.TitleText:SetText("|cFFFF6600ICN2|r – Character Needs Options  |cFF888888v1.4.0|r")
+    optFrame.TitleText:SetText("|cFFFF6600ICN2|r – Character Needs Options  |cFF888888v1.1|r")
 
     -- ── Section: Decay Preset ────────────────────────────────────────────────
     makeLabel(optFrame, "Decay Preset:", 14, -35, 1, 0.8, 0)
@@ -129,7 +129,14 @@ function ICN2:BuildOptions()
             if f then f:SetScale(v) end
         end)
 
-    makeSeparator(optFrame, 14, -258, 358)
+    makeSlider(optFrame, "Bar Length", 14, -258, 0.5, 1.5, 0.05,
+        function() return ICN2DB.settings.hudBarScale or 1.0 end,
+        function(v)
+            ICN2DB.settings.hudBarScale = v
+            ICN2:ResizeBarLength()
+        end)
+
+    makeSeparator(optFrame, 14, -303, 358)
 
     -- ── Section: v1.1 Immersion Settings ─────────────────────────────────────
     makeLabel(optFrame, "Immersion:", 14, -266, 1, 0.8, 0)
@@ -145,49 +152,49 @@ function ICN2:BuildOptions()
     fdLabel:SetText("|cFF888888Eating/drinking: auto-detected via WoW food/drink buffs.|r")
     fdLabel:SetWidth(360)
 
-    makeSeparator(optFrame, 14, -334, 358)
+    makeSeparator(optFrame, 14, -379, 358)
 
     -- ── Section: Emotes ───────────────────────────────────────────────────────
-    makeLabel(optFrame, "Emotes:", 14, -342, 1, 0.8, 0)
+    makeLabel(optFrame, "Emotes:", 14, -387, 1, 0.8, 0)
 
-    makeCheckbox(optFrame, "Enable automatic emotes", 14, -362,
+    makeCheckbox(optFrame, "Enable automatic emotes", 14, -407,
         function() return ICN2DB.settings.emotesEnabled end,
         function(v) ICN2DB.settings.emotesEnabled = v end)
 
-    makeSlider(optFrame, "Emote Chance", 14, -392, 0.0, 1.0, 0.05,
+    makeSlider(optFrame, "Emote Chance", 14, -437, 0.0, 1.0, 0.05,
         function() return ICN2DB.settings.emoteChance end,
         function(v) ICN2DB.settings.emoteChance = v end)
 
-    makeSlider(optFrame, "Min Interval (sec)", 14, -437, 30, 600, 10,
+    makeSlider(optFrame, "Min Interval (sec)", 14, -482, 30, 600, 10,
         function() return ICN2DB.settings.emoteMinInterval end,
         function(v) ICN2DB.settings.emoteMinInterval = v end)
 
-    makeSeparator(optFrame, 14, -480, 358)
+    makeSeparator(optFrame, 14, -525, 358)
 
     -- ── Section: Manual restore buttons ──────────────────────────────────────
-    makeLabel(optFrame, "Manual Restore:", 14, -488, 1, 0.8, 0)
+    makeLabel(optFrame, "Manual Restore:", 14, -533, 1, 0.8, 0)
 
     local eatBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     eatBtn:SetSize(80, 24)
-    eatBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 14, -506)
+    eatBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 14, -551)
     eatBtn:SetText("|cFF00FF00Eat|r")
     eatBtn:SetScript("OnClick", function() ICN2:Eat(50) end)
 
     local drinkBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     drinkBtn:SetSize(80, 24)
-    drinkBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 102, -506)
+    drinkBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 102, -551)
     drinkBtn:SetText("|cFF4499FFDrink|r")
     drinkBtn:SetScript("OnClick", function() ICN2:Drink(50) end)
 
     local restBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     restBtn:SetSize(80, 24)
-    restBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 190, -506)
+    restBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 190, -551)
     restBtn:SetText("|cFFFFDD00Rest|r")
     restBtn:SetScript("OnClick", function() ICN2:Rest(40) end)
 
     local resetBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     resetBtn:SetSize(80, 24)
-    resetBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 278, -506)
+    resetBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 278, -551)
     resetBtn:SetText("|cFFFF4444Reset|r")
     resetBtn:SetScript("OnClick", function()
         ICN2DB.hunger  = 100
@@ -197,11 +204,11 @@ function ICN2:BuildOptions()
     end)
 
     -- ── Section: Manual deplete buttons ──────────────────────────────────────
-    makeLabel(optFrame, "Manual Deplete:", 14, -540, 1, 0.8, 0)
+    makeLabel(optFrame, "Manual Deplete:", 14, -585, 1, 0.8, 0)
 
     local starveBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     starveBtn:SetSize(80, 24)
-    starveBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 14, -558)
+    starveBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 14, -603)
     starveBtn:SetText("|cFFFF4444Starve|r")
     starveBtn:SetScript("OnClick", function()
         ICN2DB.hunger = 0
@@ -210,7 +217,7 @@ function ICN2:BuildOptions()
 
     local dehydrateBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     dehydrateBtn:SetSize(80, 24)
-    dehydrateBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 102, -558)
+    dehydrateBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 102, -603)
     dehydrateBtn:SetText("|cFFFF4444Dehydrate|r")
     dehydrateBtn:SetScript("OnClick", function()
         ICN2DB.thirst = 0
@@ -219,7 +226,7 @@ function ICN2:BuildOptions()
 
     local exhaustBtn = CreateFrame("Button", nil, optFrame, "UIPanelButtonTemplate")
     exhaustBtn:SetSize(80, 24)
-    exhaustBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 190, -558)
+    exhaustBtn:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 190, -603)
     exhaustBtn:SetText("|cFFFF4444Exhaust|r")
     exhaustBtn:SetScript("OnClick", function()
         ICN2DB.fatigue = 0

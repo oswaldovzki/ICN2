@@ -31,6 +31,7 @@ ICN2.DEFAULTS = {
         hudLocked    = false,
         hudScale     = 1.0,
         hudAlpha     = 1.0,   -- overall transparency of the HUD (0-1)
+        hudBarScale  = 1.0,   -- bar length multiplier (0.5 = half, 1.5 = 150%)
         hudX         = nil,   -- set dynamically on first load
         hudY         = nil,
 
@@ -79,7 +80,7 @@ ICN2.SITUATION_MODIFIERS = {
 ICN2.RACE_MODIFIERS = {
     -- Horde
     ["Orc"]            = { hunger = 0.9,  thirst = 1.0,  fatigue = 0.9  },
-    ["Scourge"]        = { hunger = 0.1,  thirst = 0.1,  fatigue = 0.8  },  -- undead don't need food/water, but still get tired from body parts decaying
+    ["Scourge"]        = { hunger = 0.5,  thirst = 0.5,  fatigue = 0.8  },  -- undead don't need food/water, but still get tired from body parts decaying
     ["Tauren"]         = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.85 },
     ["Troll"]          = { hunger = 1.0,  thirst = 1.1,  fatigue = 1.0  },
     ["BloodElf"]       = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },

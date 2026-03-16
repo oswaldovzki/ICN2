@@ -33,6 +33,10 @@ local NUM_BLOCKS  = 10
 local BLOCK_GAP   = 2
 local INDICATOR_W = 28   -- widened to fit ">>>" / "<<<"
 
+-- BASE_BAR_W is the bar width at hudBarScale = 1.0.
+-- ResizeBarLength() multiplies this by the saved scale to get the actual width.
+local BASE_BAR_W  = (BLOCK_SIZE + BLOCK_GAP) * NUM_BLOCKS  -- 220px at default
+
 local NEED_KEYS = { "hunger", "thirst", "fatigue" }
 
 -- ── Icons ─────────────────────────────────────────────────────────────────────
@@ -53,6 +57,8 @@ local BLOCK_COLORS = {
 -- ── Indicator thresholds (% per second) ──────────────────────────────────────
 local IND_FASTER_UP     =  1.00
 local IND_FAST_UP       =  0.30
+local IND_UP            =  0.00
+local IND_DOWN          =  0.00
 local IND_FAST_DOWN     = -0.30
 local IND_FASTER_DOWN   = -1.00
 
@@ -83,27 +89,21 @@ end
 -- IMPORTANT: negative thresholds must be checked from most extreme (most
 -- negative) to least extreme, otherwise <<< is unreachable because
 -- rate < IND_FAST_DOWN (-0.30) would catch rate < IND_FASTER_DOWN (-1.00) first.
---
--- ## is returned for rates within ±STABLE_EPSILON of zero — this covers
--- the Well Fed pause case where hunger rate is exactly 0.0 but shouldn't
--- show as recovering (>).
-local STABLE_EPSILON = 0.002  -- ~0.12%/min — below this is considered stable
-
 local function getIndicator(rate)
-    if math.abs(rate) <= STABLE_EPSILON then
-        return "##",  0.6, 0.6, 0.6     -- stable / paused
-    elseif rate >= IND_FASTER_UP then
+    if rate >= IND_FASTER_UP then
         return ">>>", 0.0, 1.0, 0.0     -- very fast recovery
     elseif rate >= IND_FAST_UP then
         return ">>",  0.2, 0.9, 0.1     -- fast recovery
-    elseif rate > 0 then
+    elseif rate >= IND_UP then
         return ">",   0.7, 0.9, 0.4     -- slow recovery
-    elseif rate <= IND_FASTER_DOWN then  -- check most extreme first
+    elseif rate < IND_FASTER_DOWN then   -- check most extreme first
         return "<<<", 1.0, 0.0, 0.0     -- very fast decay
-    elseif rate <= IND_FAST_DOWN then
+    elseif rate < IND_FAST_DOWN then
         return "<<",  0.9, 0.2, 0.1     -- fast decay
-    else
+    elseif rate < IND_DOWN then
         return "<",   0.9, 0.7, 0.1     -- slow decay
+    else
+        return "##",  1.0, 1.0, 1.0     -- stable
     end
 end
 
@@ -111,9 +111,9 @@ end
 
 
 function ICN2:BuildHUD()
-    local s = ICN2DB.settings
-
-    local barW   = (BLOCK_SIZE + BLOCK_GAP) * NUM_BLOCKS
+    local s      = ICN2DB.settings
+    local barScale = s.hudBarScale or 1.0
+    local barW   = math.floor(BASE_BAR_W * barScale)
     local frameW = ICON_SIZE + 4 + barW + INDICATOR_W + 14
     local frameH = (BLOCK_SIZE + BAR_GAP) * #NEED_KEYS + 40 -- taller for header
 
@@ -366,7 +366,33 @@ function ICN2:ApplyBarMode()
     end
 end
 
--- ── UpdateHUD ─────────────────────────────────────────────────────────────────
+-- ── ResizeBarLength ───────────────────────────────────────────────────────────
+-- Applies the hudBarScale setting by resizing hudFrame, each rowFrame,
+-- and each barFrame. All child elements reflow automatically because:
+--   • smoothBar/smoothBG use SetAllPoints on barFrame
+--   • block textures use pixel-offset SetPoints from barFrame's TOPLEFT
+--   • indicator is anchored to rowFrame's RIGHT edge
+-- Call this whenever hudBarScale changes; no rebuild needed.
+function ICN2:ResizeBarLength()
+    if not hudFrame then return end
+
+    local barScale = ICN2DB.settings.hudBarScale or 1.0
+    local barW     = math.floor(BASE_BAR_W * barScale)
+    local frameW   = ICON_SIZE + 4 + barW + INDICATOR_W + 14
+    local frameH   = (BLOCK_SIZE + BAR_GAP) * #NEED_KEYS + 40
+
+    hudFrame:SetSize(frameW, frameH)
+
+    for _, key in ipairs(NEED_KEYS) do
+        local data = bars[key]
+        if data then
+            data.rowFrame:SetSize(frameW - 8, BLOCK_SIZE)
+            data.barFrame:SetSize(barW, BLOCK_SIZE)
+        end
+    end
+end
+
+
 function ICN2:UpdateHUD()
     if not hudFrame then return end
     if not ICN2DB.settings.hudEnabled then hudFrame:Hide(); return end
