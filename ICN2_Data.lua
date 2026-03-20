@@ -41,6 +41,9 @@ ICN2.DEFAULTS = {
         -- v1.1: Blocky bar display
         blockyBars = false,  -- if true, HUD shows 10 discrete blocks instead of smooth bar
 
+        -- HUD theme (visual style)
+        barTheme = "smooth", -- "smooth" | "blocky" | "folk" | "necromancer"
+
         -- Emotes
         emotesEnabled    = true,
         emoteChance      = 0.3,  -- probability per threshold crossing (0-1)

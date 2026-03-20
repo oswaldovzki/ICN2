@@ -108,10 +108,50 @@ function ICN2:BuildOptions()
         function() return ICN2DB.settings.hudLocked end,
         function(v) ICN2DB.settings.hudLocked = v; ICN2:LockHUD(v) end)
 
-    -- v1.1: Blocky bars toggle
-    makeCheckbox(optFrame, "Blocky Bars  |cFF888888(10 blocks, less precise)|r", 200, -112,
-        function() return ICN2DB.settings.blockyBars end,
-        function(v) ICN2:SetBlockyBars(v) end)
+    -- ── Section: Bar Theme dropdown ───────────────────────────────────────────
+    makeLabel(optFrame, "Theme:", 200, -92, 1, 0.8, 0)
+
+    -- Themes list (defined in ICN2_HUD.lua)
+    local THEMES = ICN2.HUD_THEME_LIST or {
+        { id = "smooth", label = "Smooth" },
+        { id = "blocky", label = "Blocky" },
+        { id = "folk", label = "Folk" },
+        { id = "necromancer", label = "Necromancer" },
+    }
+
+    local themeDropdown = CreateFrame("Frame", "ICN2ThemeDropdown", optFrame, "UIDropDownMenuTemplate")
+    themeDropdown:SetPoint("TOPLEFT", optFrame, "TOPLEFT", 188, -106)
+
+    local function themeLabel()
+        local current = ICN2DB.settings.barTheme or "smooth"
+        if ICN2.GetHUDTheme then
+            return (ICN2:GetHUDTheme(current).label) or "Smooth"
+        end
+        for _, t in ipairs(THEMES) do
+            if t.id == current then return t.label end
+        end
+        return "Smooth"
+    end
+
+    UIDropDownMenu_SetWidth(themeDropdown, 140)
+    UIDropDownMenu_SetText(themeDropdown, themeLabel())
+
+    UIDropDownMenu_Initialize(themeDropdown, function(self, level)
+        for _, t in ipairs(THEMES) do
+            local info      = UIDropDownMenu_CreateInfo()
+            info.text       = t.label
+            info.value      = t.id
+            info.checked    = (ICN2DB.settings.barTheme or "smooth") == t.id
+            info.disabled   = false
+            info.func       = function(btn)
+                UIDropDownMenu_SetSelectedValue(themeDropdown, btn.value)
+                UIDropDownMenu_SetText(themeDropdown, btn:GetText())
+                CloseDropDownMenus()
+                ICN2:SetBarTheme(btn.value)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
 
     makeSlider(optFrame, "Opacity", 14, -170, 0.1, 1.0, 0.05,
         function() return ICN2DB.settings.hudAlpha end,

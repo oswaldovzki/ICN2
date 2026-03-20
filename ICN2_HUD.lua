@@ -54,6 +54,55 @@ local BLOCK_COLORS = {
     fatigue = { 1.0, 0.85, 0.1 },
 }
 
+-- ── HUD Themes ───────────────────────────────────────────────────────────────
+local DEFAULT_SMOOTH_TEX = "Interface\\TargetingFrame\\UI-StatusBar"
+
+ICN2.HUD_THEMES = {
+    smooth = {
+        id    = "smooth",
+        label = "Smooth",
+        mode  = "smooth",
+        smoothTex = DEFAULT_SMOOTH_TEX,
+        smoothBG  = { 0.12, 0.12, 0.12, 0.9 },
+    },
+    blocky = {
+        id    = "blocky",
+        label = "Blocky",
+        mode  = "blocky",
+        smoothTex = DEFAULT_SMOOTH_TEX, -- used if you switch out of blocky
+        smoothBG  = { 0.12, 0.12, 0.12, 0.9 },
+    },
+    folk = {
+        id    = "folk",
+        label = "Folk",
+        mode  = "smooth",
+        -- TODO: set smoothAtlas to a valid StatusBar-friendly atlas
+        smoothAtlas = nil,
+        smoothTex   = DEFAULT_SMOOTH_TEX,
+        smoothBG    = { 0.12, 0.12, 0.12, 0.9 },
+    },
+    necromancer = {
+        id    = "necromancer",
+        label = "Necromancer",
+        mode  = "smooth",
+        -- TODO: set smoothAtlas to a valid StatusBar-friendly atlas
+        smoothAtlas = nil,
+        smoothTex   = DEFAULT_SMOOTH_TEX,
+        smoothBG    = { 0.12, 0.12, 0.12, 0.9 },
+    },
+}
+
+ICN2.HUD_THEME_LIST = {
+    ICN2.HUD_THEMES.smooth,
+    ICN2.HUD_THEMES.blocky,
+    ICN2.HUD_THEMES.folk,
+    ICN2.HUD_THEMES.necromancer,
+}
+
+function ICN2:GetHUDTheme(id)
+    return ICN2.HUD_THEMES[id] or ICN2.HUD_THEMES.smooth
+end
+
 -- ── Indicator thresholds (% per second) ──────────────────────────────────────
 local IND_FASTER_UP     =  1.00
 local IND_FAST_UP       =  0.30
@@ -333,6 +382,43 @@ function ICN2:BuildHUD()
     cmdButton2:SetScript("OnClick", function()
         ICN2:PrintDetails()
     end)
+
+    -- Ensure a valid theme is selected (backward-compatible with old blockyBars)
+    if not ICN2DB.settings.barTheme then
+        ICN2DB.settings.barTheme = ICN2DB.settings.blockyBars and "blocky" or "smooth"
+    end
+    ICN2:ApplyHUDTheme(ICN2DB.settings.barTheme)
+end
+
+-- ── ApplyHUDTheme ────────────────────────────────────────────────────────────
+function ICN2:ApplyHUDTheme(themeId)
+    if not hudFrame then return end
+
+    local theme = ICN2:GetHUDTheme(themeId)
+    ICN2DB.settings.barTheme = theme.id
+    ICN2DB.settings.blockyBars = (theme.mode == "blocky")
+
+    local bg = theme.smoothBG or { 0.12, 0.12, 0.12, 0.9 }
+    for _, key in ipairs(NEED_KEYS) do
+        local data = bars[key]
+        if data then
+            if theme.smoothAtlas then
+                data.smoothBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+                data.smoothBar:GetStatusBarTexture():SetAtlas(theme.smoothAtlas, false)
+            else
+                data.smoothBar:SetStatusBarTexture(theme.smoothTex or DEFAULT_SMOOTH_TEX)
+            end
+            data.smoothBG:SetColorTexture(bg[1], bg[2], bg[3], bg[4] or 1)
+        end
+    end
+
+    ICN2:ApplyBarMode()
+end
+
+-- ── SetBarTheme ──────────────────────────────────────────────────────────────
+function ICN2:SetBarTheme(themeId)
+    ICN2:ApplyHUDTheme(themeId)
+    ICN2:UpdateHUD()
 end
 
 -- ── ApplyBarMode ──────────────────────────────────────────────────────────────
