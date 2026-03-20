@@ -7,8 +7,8 @@
 -- Opens a scrollable window showing a full JSON snapshot of
 -- every modifier, state flag, rate component, and internal
 -- value in the addon at the moment the command is run.
--- The snapshot is also printed to the chat as a copyable string
--- so it can be pasted into bug reports.
+-- The snapshot is shown in a selectable edit box so it can be
+-- copied without posting to chat.
 --
 -- Load order: last in ICN2.toc (after all other modules).
 -- To enable:  add "ICN2_Debug.lua" to ICN2.toc
@@ -327,14 +327,34 @@ local function buildDebugFrame()
     content:SetSize(DEBUG_W - 50, 1)  -- height set dynamically below
     scroll:SetScrollChild(content)
 
-    local text = content:CreateFontString(nil, "OVERLAY")
+    local text = CreateFrame("EditBox", nil, content)
     text:SetFont(DEBUG_FONT, DEBUG_SIZE, "")
     text:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -4)
     text:SetWidth(DEBUG_W - 58)
+    text:SetMultiLine(true)
+    text:SetAutoFocus(false)
     text:SetJustifyH("LEFT")
     text:SetJustifyV("TOP")
-    text:SetWordWrap(false)   -- JSON should not wrap; horizontal scroll via mouse-wheel on sides
-    text:SetNonSpaceWrap(false)
+    text:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local function getTextHeight(json)
+        local ok, h = pcall(text.GetStringHeight, text)
+        if ok and type(h) == "number" and h > 0 then
+            return h
+        end
+        local _, fontSize = text:GetFont()
+        local lineHeight = (fontSize or DEBUG_SIZE) + 2
+        local _, lines = json:gsub("\n", "")
+        return (lines + 1) * lineHeight
+    end
+
+    local function setDebugText(json)
+        text:SetText(json)
+        local height = math.max(DEBUG_H - 50, getTextHeight(json) + 10)
+        text:SetHeight(height)
+        content:SetHeight(height)
+        scroll:SetVerticalScroll(0)
+    end
 
     -- ── Refresh button ────────────────────────────────────────────────────────
     local refreshBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
@@ -344,31 +364,23 @@ local function buildDebugFrame()
     refreshBtn:SetScript("OnClick", function()
         local snapshot = buildSnapshot()
         local json     = serialize(snapshot)
-        text:SetText(json)
-        content:SetHeight(math.max(DEBUG_H - 50, text:GetStringHeight() + 10))
-        scroll:SetVerticalScroll(0)
+        setDebugText(json)
     end)
 
-    -- ── Copy-to-chat button ───────────────────────────────────────────────────
-    -- WoW doesn't support clipboard access from Lua, so we print to chat instead.
-    local copyBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    copyBtn:SetSize(80, 22)
-    copyBtn:SetPoint("TOPRIGHT", refreshBtn, "TOPLEFT", -4, 0)
-    copyBtn:SetText("→ Chat")
-    copyBtn:SetScript("OnClick", function()
-        local snapshot = buildSnapshot()
-        local json     = serialize(snapshot)
-        -- Print in chunks — WoW chat has a ~255 char line limit
-        local chunkSize = 240
-        print("|cFFFF6600ICN2 Debug Snapshot|r — " .. snapshot.timestamp)
-        for i = 1, #json, chunkSize do
-            print(json:sub(i, i + chunkSize - 1))
-        end
+    -- ── Select-all button (for easy copy) ─────────────────────────────────────
+    local selectBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    selectBtn:SetSize(90, 22)
+    selectBtn:SetPoint("TOPRIGHT", refreshBtn, "TOPLEFT", -4, 0)
+    selectBtn:SetText("Select All")
+    selectBtn:SetScript("OnClick", function()
+        text:SetFocus()
+        text:HighlightText()
     end)
 
     f._text    = text
     f._content = content
     f._scroll  = scroll
+    f._setJson = setDebugText
     return f
 end
 
@@ -384,10 +396,7 @@ function ICN2:OpenDebug()
     -- Always refresh on open
     local snapshot = buildSnapshot()
     local json     = serialize(snapshot)
-    debugFrame._text:SetText(json)
-    debugFrame._content:SetHeight(
-        math.max(DEBUG_H - 50, debugFrame._text:GetStringHeight() + 10))
-    debugFrame._scroll:SetVerticalScroll(0)
+    debugFrame._setJson(json)
 
     if debugFrame:IsShown() then
         debugFrame:Hide()
