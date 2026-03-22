@@ -1,5 +1,5 @@
 -- ============================================================
--- ICN2_Debug.lua  (v1.4.0)
+-- ICN2_Debug.lua  (v1.5.0)
 -- Standalone debug overlay. NOT included in release builds.
 --
 -- Usage: /icn2 debug
@@ -18,11 +18,13 @@
 ICN2 = ICN2 or {}
 
 -- ── Layout ────────────────────────────────────────────────────────────────────
-local DEBUG_W    = 640
-local DEBUG_H    = 520
-local DEBUG_FONT = "Fonts\\FRIZQT__.TTF"
-local DEBUG_SIZE = 11
+-- Constants defining the debug window's appearance and layout
+local DEBUG_W    = 640  -- Window width
+local DEBUG_H    = 520  -- Window height
+local DEBUG_FONT = "Fonts\\FRIZQT__.TTF"  -- Font file path
+local DEBUG_SIZE = 11   -- Font size
 
+-- Global reference to the debug frame (created lazily)
 local debugFrame = nil
 
 -- ══════════════════════════════════════════════════════════════════════════════
@@ -33,6 +35,8 @@ local debugFrame = nil
 -- ══════════════════════════════════════════════════════════════════════════════
 
 -- ── Armor tier from equipped chest ───────────────────────────────────────────
+-- Determines the armor type worn by the player based on chest armor subtype.
+-- Returns "PLATE", "MAIL", "LEATHER", "CLOTH", or appropriate fallback.
 local function getArmorTier()
     local itemLink = GetInventoryItemLink("player", 5)
     if not itemLink then return "none (no chest)" end
@@ -46,13 +50,18 @@ local function getArmorTier()
 end
 
 -- ── Stand state string ────────────────────────────────────────────────────────
+-- Maps stand state IDs to human-readable names for display
 local STAND_NAMES = { [0]="standing", [1]="sitting", [2]="laying", [3]="kneeling" }
+-- Returns the current stand state of the player as a string
 local function getStandState()
     local v = GetUnitStandState and GetUnitStandState("player") or 0
     return STAND_NAMES[v] or ("unknown("..tostring(v)..")")
 end
 
 -- ── Resolve active situation modifiers ───────────────────────────────────────
+-- Returns a table of currently active situation modifiers based on the player's state.
+-- Situation modifiers are applied based on conditions like resting, mounted, flying, etc.
+-- Resting is exclusive and overrides all other modifiers.
 local function getActiveSituations()
     local st  = ICN2.State or {}
     local sm  = ICN2.SITUATION_MODIFIERS or {}
@@ -74,6 +83,8 @@ local function getActiveSituations()
 end
 
 -- ── Race + class modifiers ────────────────────────────────────────────────────
+-- Retrieves the player's race and class, and looks up their corresponding modifiers
+-- from the global modifier tables. Returns a table with race and class info.
 local function getRaceClassModifiers()
     local race   = select(2, UnitRace("player"))
     local _, cls = UnitClass("player")
@@ -84,10 +95,14 @@ local function getRaceClassModifiers()
 end
 
 -- ── Food / drink state ────────────────────────────────────────────────────────
+-- Gathers information about the player's current eating and drinking states,
+-- including active status, tiers, durations, and calculated trickle rates.
+-- Also includes well-fed status and remaining time.
 local function getFoodDrinkState()
     local isEating   = ICN2.IsEating   and ICN2:IsEating()   or false
     local isDrinking = ICN2.IsDrinking and ICN2:IsDrinking() or false
 
+    -- Trickle rates per second for different food/drink tiers
     local foodTrickle, drinkTrickle = 0, 0
     local TRICKLE = { simple = 30.0, complex = 40.0, feast = 60.0 }
 
@@ -102,6 +117,7 @@ local function getFoodDrinkState()
         drinkTrickle = (TRICKLE[tier] or 30.0) / math.max(1, dur)
     end
 
+    -- Well-fed pause expiry and remaining time
     local wfExpiry    = ICN2._wellFedPauseExpiry or 0
     local wfRemaining = (wfExpiry > 0) and math.max(0, math.ceil(wfExpiry - GetTime())) or 0
 
@@ -127,6 +143,8 @@ local function getFoodDrinkState()
 end
 
 -- ── Fatigue recovery state ────────────────────────────────────────────────────
+-- Determines the current fatigue recovery tier and gain rate based on internal state.
+-- Fatigue recovery provides bonus fatigue gain under certain conditions.
 local function getFatigueRecovery()
     local tier = ICN2._fatigueRecoveryTier or "none"
     local src  = ICN2._fatigueRecoverySrc  or ""
@@ -143,6 +161,8 @@ local function getFatigueRecovery()
 end
 
 -- ── Preset and base decay ─────────────────────────────────────────────────────
+-- Retrieves the current preset settings and calculates base decay rates.
+-- Presets multiply the base decay rates for hunger, thirst, and fatigue.
 local function getPresetInfo()
     local s      = ICN2DB and ICN2DB.settings or {}
     local preset = ICN2.PRESETS and (ICN2.PRESETS[s.preset] or 1.0) or 1.0
@@ -159,6 +179,8 @@ local function getPresetInfo()
 end
 
 -- ── Settings snapshot ─────────────────────────────────────────────────────────
+-- Collects all user-configurable settings from the saved variables.
+-- These control various aspects of the addon's behavior and UI.
 local function getSettings()
     local s = ICN2DB and ICN2DB.settings or {}
     return {
@@ -176,6 +198,8 @@ local function getSettings()
 end
 
 -- ── Build the full snapshot table ─────────────────────────────────────────────
+-- Assembles all debug information into a single table structure.
+-- This includes current needs, rates, state flags, modifiers, and settings.
 local function buildSnapshot()
     local st    = ICN2.State or {}
     local rates = ICN2.GetCurrentRates and ICN2:GetCurrentRates()
@@ -233,10 +257,15 @@ end
 -- ══════════════════════════════════════════════════════════════════════════════
 -- SECTION 2 — Serializer
 -- Converts the snapshot table to a pretty-printed JSON-like string.
--- Uses 2-space indentation. Booleans, numbers, strings, nil, and nested
--- tables are all handled. Functions and userdata are skipped.
+-- Uses 2-space indentation. Handles booleans, numbers, strings, nil, and nested
+-- tables. Functions and userdata are skipped. Arrays are detected and formatted
+-- differently from objects.
 -- ══════════════════════════════════════════════════════════════════════════════
 
+-- Serializes a Lua value to a JSON-like string with proper indentation.
+-- @param val: The value to serialize (table, string, number, boolean, nil)
+-- @param indent: Current indentation level (number, defaults to 0)
+-- @return: JSON-like string representation
 local function serialize(val, indent)
     indent = indent or 0
     local pad  = string.rep("  ", indent)
@@ -301,8 +330,12 @@ end
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- SECTION 3 — UI
+-- Creates and manages the debug window UI components including the frame,
+-- scrollable text area, and control buttons.
 -- ══════════════════════════════════════════════════════════════════════════════
 
+-- Creates the debug window frame with all UI elements.
+-- Returns the frame object with attached methods for updating content.
 local function buildDebugFrame()
     local f = CreateFrame("Frame", "ICN2DebugFrame", UIParent, "BasicFrameTemplateWithInset")
     f:SetSize(DEBUG_W, DEBUG_H)
@@ -337,6 +370,7 @@ local function buildDebugFrame()
     text:SetJustifyV("TOP")
     text:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
+    -- Calculates the height needed for the text content
     local function getTextHeight(json)
         local ok, h = pcall(text.GetStringHeight, text)
         if ok and type(h) == "number" and h > 0 then
@@ -348,6 +382,7 @@ local function buildDebugFrame()
         return (lines + 1) * lineHeight
     end
 
+    -- Sets the JSON text in the edit box and adjusts container heights
     local function setDebugText(json)
         text:SetText(json)
         local height = math.max(DEBUG_H - 50, getTextHeight(json) + 10)
@@ -388,6 +423,8 @@ end
 -- SECTION 4 — Public entry point
 -- ══════════════════════════════════════════════════════════════════════════════
 
+-- Toggles the debug window visibility. Creates the frame if it doesn't exist,
+-- then shows or hides it. Always refreshes the content when opening.
 function ICN2:OpenDebug()
     if not debugFrame then
         debugFrame = buildDebugFrame()

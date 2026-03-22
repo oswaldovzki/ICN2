@@ -25,7 +25,7 @@
 ICN2 = ICN2 or {}
 
 -- ── Frame and tick ────────────────────────────────────────────────────────────
-local frame        = CreateFrame("Frame", "ICN2Frame", UIParent)
+local frame        = CreateFrame("Frame", "ICN2Frame", UIParent) -- single frame for handling all events and OnUpdate; we keep it local since external modules don't need to access it
 local tickInterval = 1.0
 local elapsed      = 0
 
@@ -49,7 +49,7 @@ local function deepCopy(orig) -- for copying tables from DEFAULTS into the saved
     return copy
 end
 
-local function migrateCustomDecayBiasFromLegacy()
+local function migrateCustomDecayBiasFromLegacy() -- one-time migration of old customDecayBias values from a -10..10 slider scale to the new 0..maxM multiplier scale; runs on load if the version key is not yet set to 2
     local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
     local cb = ICN2DB.settings.customDecayBias
     if not cb then
@@ -111,21 +111,20 @@ end
 -- ── Custom decay slider (0..CUSTOM_DECAY_MULTIPLIER_MAX) ───────────────────
 -- Value is passive decay multiplier vs Medium (1×). 0 = no passive decay; max = 10× Fast.
 
-function ICN2:DecayBiasToMultiplier(bias)
+function ICN2:DecayBiasToMultiplier(bias) -- converts the custom decay bias slider value (0..maxM) to a multiplier for the rate engine; also clamps the input to the valid range
     local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
     local b = tonumber(bias) or 0
     if b < 0 then b = 0 elseif b > maxM then b = maxM end
     return b
 end
 
--- Preset global multiplier (e.g. fast = 3.0) → same integer scale as the custom sliders (read-only).
-function ICN2:PresetMultiplierToBiasDisplay(mult)
+function ICN2:PresetMultiplierToBiasDisplay(mult) -- converts a preset global multiplier (e.g. 3.0 for "fast") to the corresponding integer value on the custom decay bias slider for display in the /icn2 details output; also clamps the result to the valid range
     local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
     local m = tonumber(mult) or 1
     return math.max(0, math.min(maxM, math.floor(m + 0.5)))
 end
 
-function ICN2:GetEffectiveDecayMultiplier(needKey)
+function ICN2:GetEffectiveDecayMultiplier(needKey) -- returns the effective decay multiplier for the given need ("hunger", "thirst", or "fatigue") based on the current preset; if the preset is "custom", it uses the per-need bias from settings.customDecayBias and converts it to a multiplier
     local s = ICN2DB.settings
     if s.preset == "custom" then
         local cb = s.customDecayBias
@@ -398,19 +397,19 @@ end
 
 -- ══ SECTION 5 ══════════════════════════════════════════════════════════════════
 -- Manual recovery (slash commands / options panel)
-function ICN2:Eat(amount)
+function ICN2:Eat(amount) -- increases hunger by the specified amount (default 30), clamps to 100, updates the HUD, and triggers a "satisfied" emote for hunger
     ICN2DB.hunger = clamp(ICN2DB.hunger + (amount or 30))
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "hunger")
 end
 
-function ICN2:Drink(amount)
+function ICN2:Drink(amount) -- increases thirst by the specified amount (default 30), clamps to 100, updates the HUD, and triggers a "satisfied" emote for thirst
     ICN2DB.thirst = clamp(ICN2DB.thirst + (amount or 30))
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "thirst")
 end
 
-function ICN2:Rest(amount)
+function ICN2:Rest(amount) -- increases fatigue by the specified amount (default 20), clamps to 100, updates the HUD, and triggers a "satisfied" emote for fatigue
     ICN2DB.fatigue = clamp(ICN2DB.fatigue + (amount or 20))
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "fatigue")

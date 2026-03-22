@@ -3,7 +3,7 @@
 -- Static tables: defaults, race/class modifiers, emotes
 -- ============================================================
 
-ICN2 = ICN2 or {}
+ICN2 = ICN2 or {}  -- Safely initialize the global ICN2 table to avoid overwriting existing data
 
 -- ── Default SavedVariables structure ──────────────────────────────────────────
 ICN2.DEFAULTS = {
@@ -64,20 +64,21 @@ ICN2.DEFAULTS = {
 }
 
 -- ── Preset multipliers (applied to base decay) ────────────────────────────────
+-- Multipliers for decay rates: higher values mean faster decay (needs deplete quicker).
 ICN2.PRESETS = {
     fast      = 3.0,
     medium    = 1.0,
     slow      = 0.5,
-    realistic = 0.15
-    -- custom    = 1.0,  -- user sets their own rates directly
+    realistic = 0.15,
+    custom    = 1.0  -- user sets their own rates directly
 }
 
 -- Custom sliders: 0 = no passive decay; max = 10 × Fast (×3) = ×30 vs Medium base.
 ICN2.CUSTOM_DECAY_MULTIPLIER_MAX = 10 * ICN2.PRESETS.fast
 
 -- ── Situational decay multipliers ─────────────────────────────────────────────
--- These modify the decay rate based on what the player is doing.
--- All three needs are multiplied by the *combined* modifier.
+-- These modify the decay rate based on the player's current activity.
+-- Each situation applies its multipliers to hunger, thirst, and fatigue.
 ICN2.SITUATION_MODIFIERS = {
     swimming   = { hunger = 1.4, thirst = 1.5, fatigue = 1.8 },
     flying     = { hunger = 0.9, thirst = 1.0, fatigue = 0.6 },
@@ -142,6 +143,7 @@ ICN2.CLASS_MODIFIERS = {
 }
 
 -- ── Emote tables by state ─────────────────────────────────────────────────────
+-- Tables of emote commands triggered when needs reach certain thresholds or are satisfied.
 ICN2.EMOTES = {
     hungry = {
         critical = { "/lick", "/drool", "/hungry" },

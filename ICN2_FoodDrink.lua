@@ -33,30 +33,37 @@
 ICN2 = ICN2 or {}
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
+-- Tier data defines the recovery rates and completion bonuses for each food/drink tier
 local TIER_DATA = {
-    simple  = { trickle = 30.0, bonus = 10.0 },
-    complex = { trickle = 40.0, bonus = 15.0 },
-    feast   = { trickle = 60.0, bonus = 20.0 },
+    simple  = { trickle = 30.0, bonus = 10.0 },  -- Basic food/drink: 30% over duration + 10% bonus
+    complex = { trickle = 40.0, bonus = 15.0 },  -- Well-fed granting items: 40% over duration + 15% bonus
+    feast   = { trickle = 60.0, bonus = 20.0 },  -- Feast items: 60% over duration + 20% bonus (both needs)
 }
 
-local WELLFED_PAUSE_SECS = 300  -- 5 minutes
+local WELLFED_PAUSE_SECS = 300  -- 5 minutes of hunger decay pause from well-fed buff
 
 -- ── Public state (read by Core) ───────────────────────────────────────────────
-ICN2._wellFedPauseExpiry = 0    -- GetTime() timestamp; 0 = not active
+ICN2._wellFedPauseExpiry = 0    -- GetTime() timestamp when well-fed pause expires; 0 = not active
 
 -- ── Internal state ────────────────────────────────────────────────────────────
+-- Tracks current food and drink consumption states
 local foodState  = { active = false, startTime = nil, duration = nil, tier = nil }
 local drinkState = { active = false, startTime = nil, duration = nil, tier = nil }
 
 -- ── Aura name patterns ────────────────────────────────────────────────────────
+-- Patterns used to identify different types of food/drink auras by name
 local FOOD_AURA_PATTERNS   = { "food", "refreshment", "eating" }
 local DRINK_AURA_PATTERNS  = { "drink", "drinking", "hydration" }
-local DRINK_EXTRA_PATTERNS = { "conjured water", "mana tea", "morning glory" }
+local DRINK_EXTRA_PATTERNS = { "conjured water", "mana tea", "morning glory" }  -- Special drink types
 local WELLFED_PATTERNS     = { "well fed" }
 local FEAST_NAME_PATTERNS  = { "feast", "banquet", "spread", "bountiful" }
 
 -- ── Aura helpers ──────────────────────────────────────────────────────────────
-local function matchesAny(name, patterns) -- case-insensitive substring match
+-- Checks if a string matches any of the provided patterns (case-insensitive substring search)
+-- @param name: The aura name to check
+-- @param patterns: Array of pattern strings to match against
+-- @return: true if any pattern matches, false otherwise
+local function matchesAny(name, patterns)
     if not name then return false end
     local lower = string.lower(name)
     for _, p in ipairs(patterns) do
@@ -65,7 +72,11 @@ local function matchesAny(name, patterns) -- case-insensitive substring match
     return false
 end
 
-local function findAura(patterns, extraPatterns) -- returns the first matching aura, or nil if not found
+-- Finds the first aura on the player that matches any of the given patterns
+-- @param patterns: Primary patterns to match against aura names
+-- @param extraPatterns: Optional additional patterns to check
+-- @return: The first matching aura data table, or nil if none found
+local function findAura(patterns, extraPatterns)
     local i = 1
     while true do
         local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
@@ -78,28 +89,21 @@ local function findAura(patterns, extraPatterns) -- returns the first matching a
 end
 
 -- ── Tier detection ────────────────────────────────────────────────────────────
--- Called once when the eating/drinking buff first appears.
--- Scans the player's bags for a food/drink item and checks its tooltip
--- for "Well Fed" to determine if it's complex tier.
---
--- TWW 12.0 API notes:
---   C_Container.GetContainerNumSlots / GetContainerItemLink — correct calls.
---   GetContainerItemLink global was removed in Dragonflight.
---   C_TooltipInfo.GetItemByID returns tooltip lines including secondary effects.
---
--- Returns "feast" | "complex" | "simple".
+-- Determines the tier of food/drink by scanning player bags for the item
+-- and checking its tooltip for "Well Fed" secondary effects.
+-- @param isFeast: If true, returns "feast" tier immediately
+-- @return: "feast", "complex", or "simple"
 local function detectTierFromBags(isFeast)
     if isFeast then return "feast" end
 
+    -- Scan all bags and slots for food/drink items
     for bag = 0, 4 do
         local numSlots = C_Container.GetContainerNumSlots(bag)
         if numSlots and numSlots > 0 then
             for slot = 1, numSlots do
                 local itemLink = C_Container.GetContainerItemLink(bag, slot)
                 if itemLink then
-                    -- Use C_TooltipInfo to read tooltip lines, which includes
-                    -- secondary effects like "Well Fed" that GetSpellDescription
-                    -- may not return reliably for food items.
+                    -- Extract item ID from the item link
                     local itemID = C_Item.GetItemIDByGUID and
                         select(1, strsplit(":", itemLink:match("|Hitem:([%d:]+)|"))) or nil
                     if not itemID then
@@ -107,16 +111,17 @@ local function detectTierFromBags(isFeast)
                         itemID = tonumber(itemLink:match("|Hitem:(%d+):"))
                     end
                     if itemID then
+                        -- Use modern tooltip API to check for "Well Fed" in item tooltip
                         local tooltipData = C_TooltipInfo and C_TooltipInfo.GetItemByID(tonumber(itemID))
                         if tooltipData and tooltipData.lines then
                             for _, line in ipairs(tooltipData.lines) do
                                 local text = line.leftText or ""
                                 if text:lower():find("well fed", 1, true) then
-                                    return "complex"
+                                    return "complex"  -- Item grants well-fed buff
                                 end
                             end
                         else
-                            -- C_TooltipInfo unavailable; fall back to GetSpellDescription
+                            -- Fallback for older API: check spell description
                             local _, spellID = GetItemSpell(itemLink)
                             if spellID then
                                 local desc = GetSpellDescription and GetSpellDescription(spellID) or ""
@@ -131,20 +136,30 @@ local function detectTierFromBags(isFeast)
         end
     end
 
-    return "simple"
+    return "simple"  -- Default tier if no special effects found
 end
 
+-- Detects food tier, checking for feast keywords in aura name first
+-- @param foodAura: The food aura data table
+-- @return: "feast", "complex", or "simple"
 local function detectFoodTier(foodAura)
     local isFeast = matchesAny(foodAura.name, FEAST_NAME_PATTERNS)
     return detectTierFromBags(isFeast)
 end
 
-local function detectDrinkTier() -- Feasts cover both needs; if food is already feast, drink inherits it.
+-- Detects drink tier, inheriting feast status from food if applicable
+-- @return: "feast", "complex", or "simple"
+local function detectDrinkTier()
     if foodState.active and foodState.tier == "feast" then return "feast" end
     return detectTierFromBags(false)
 end
 
 -- ── Apply completion bonus ─────────────────────────────
+-- Applies the completion bonus when food/drink consumption finishes naturally.
+-- Only applies if the session completed naturally (not interrupted).
+-- @param state: The foodState or drinkState table
+-- @param need: "hunger" or "thirst"
+-- @param natural: true if completed naturally, false if interrupted
 local function applyBonus(state, need, natural) -- On natural completion we add a lump-sum bonus. Interrupted sessions get nothing.
     if not state.tier or not natural then return end
 
@@ -170,14 +185,17 @@ local function applyBonus(state, need, natural) -- On natural completion we add 
 end
 
 -- ── Main aura scan ────────────────────────────────────────────────────────────
-function ICN2:OnUnitAura() -- Fires on UNIT_AURA, which is more reliable than the native food/drink buff events that can be missed if the buff applies and expires while the player is in combat.
+-- Main function called on UNIT_AURA events. Handles food, drink, and well-fed aura detection.
+-- More reliable than native buff events as it catches buffs that apply/expire during combat.
+function ICN2:OnUnitAura()
     if UnitAffectingCombat("player") then return end
 
     local now = GetTime()
 
-    -- ── Food ──────────────────────────────────────────────────────────────────
+    -- ── Food aura handling ─────────────────────────────────────────────────────
     local foodAura = findAura(FOOD_AURA_PATTERNS)
     if foodAura then
+        -- Food aura is active - start or continue tracking
         if not foodState.active then
             foodState.active    = true
             foodState.startTime = now
@@ -185,9 +203,10 @@ function ICN2:OnUnitAura() -- Fires on UNIT_AURA, which is more reliable than th
             foodState.tier      = detectFoodTier(foodAura)
         end
     else
+        -- Food aura ended - apply completion bonus if natural
         if foodState.active then
             local elapsed = now - (foodState.startTime or now)
-            local natural = elapsed >= (foodState.duration or 30) * 0.85
+            local natural = elapsed >= (foodState.duration or 30) * 0.85  -- 85% completion threshold
             applyBonus(foodState, "hunger", natural)
             foodState.active    = false
             foodState.startTime = nil
@@ -196,9 +215,10 @@ function ICN2:OnUnitAura() -- Fires on UNIT_AURA, which is more reliable than th
         end
     end
 
-    -- ── Well Fed ──────────────────────────────────────────────────────────────
+    -- ── Well Fed aura handling ────────────────────────────────────────────────
     local wellFedAura = findAura(WELLFED_PATTERNS)
     if wellFedAura then
+        -- New well-fed aura detected - start hunger pause
         local id = wellFedAura.auraInstanceID or 0
         if id ~= ICN2._lastWellFedInstanceID then
             ICN2._lastWellFedInstanceID = id
@@ -213,9 +233,10 @@ function ICN2:OnUnitAura() -- Fires on UNIT_AURA, which is more reliable than th
         -- 5 minutes even if the aura drops before the timer expires.
     end
 
-    -- ── Drink ─────────────────────────────────────────────────────────────────
+    -- ── Drink aura handling ───────────────────────────────────────────────────
     local drinkAura = findAura(DRINK_AURA_PATTERNS, DRINK_EXTRA_PATTERNS)
     if drinkAura then
+        -- Drink aura is active - start or continue tracking
         if not drinkState.active then
             drinkState.active    = true
             drinkState.startTime = now
@@ -223,6 +244,7 @@ function ICN2:OnUnitAura() -- Fires on UNIT_AURA, which is more reliable than th
             drinkState.tier      = detectDrinkTier()
         end
     else
+        -- Drink aura ended - apply completion bonus if natural
         if drinkState.active then
             local elapsed = now - (drinkState.startTime or now)
             local natural = elapsed >= (drinkState.duration or 30) * 0.85
@@ -236,13 +258,41 @@ function ICN2:OnUnitAura() -- Fires on UNIT_AURA, which is more reliable than th
 end
 
 -- ── Stubs ─────────────────────────────────────────────────────────────────────
+-- Legacy function stubs for compatibility (no longer used in current implementation)
 function ICN2:OnCombatBreakFoodDrink() end
 function ICN2:FoodDrinkTick()          end
 
 -- ── Status queries (read by Core rate engine) ─────────────────────────────────
-function ICN2:IsEating()         return foodState.active            end -- Active = has the food buff aura; not necessarily still eating (could be in the post-eating buff phase)
-function ICN2:IsDrinking()       return drinkState.active           end -- Active = has the drink buff aura; not necessarily still drinking (could be in the post-drinking buff phase)
-function ICN2:GetFoodTier()      return foodState.tier or "simple"  end -- If active, tier is set to "simple", "complex", or "feast". If not active, tier is nil, but we return "simple" as a default for simplicity in Core's rate calculations.
-function ICN2:GetDrinkTier()     return drinkState.tier or "simple" end -- Same logic as GetFoodTier.
-function ICN2:GetFoodDuration()  return foodState.duration          end -- If active, duration is the total duration of the food buff. If not active, duration is nil.
-function ICN2:GetDrinkDuration() return drinkState.duration         end -- Same logic as GetFoodDuration.
+-- Functions that provide current food/drink state information to the core rate calculation engine
+
+-- Returns true if player currently has an active food buff (eating or post-eating phase)
+function ICN2:IsEating()
+    return foodState.active
+end
+
+-- Returns true if player currently has an active drink buff (drinking or post-drinking phase)
+function ICN2:IsDrinking()
+    return drinkState.active
+end
+
+-- Returns the current food tier: "simple", "complex", or "feast"
+-- Defaults to "simple" when not eating for rate calculation purposes
+function ICN2:GetFoodTier()
+    return foodState.tier or "simple"
+end
+
+-- Returns the current drink tier: "simple", "complex", or "feast"
+-- Defaults to "simple" when not drinking for rate calculation purposes
+function ICN2:GetDrinkTier()
+    return drinkState.tier or "simple"
+end
+
+-- Returns the total duration of the current food buff in seconds, or nil if not eating
+function ICN2:GetFoodDuration()
+    return foodState.duration
+end
+
+-- Returns the total duration of the current drink buff in seconds, or nil if not drinking
+function ICN2:GetDrinkDuration()
+    return drinkState.duration
+end
