@@ -184,7 +184,7 @@ function ICN2:BuildOptions()
     optFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
     optFrame:Hide()
 
-    optFrame.TitleText:SetText("|cFFFF6600ICN2|r – Character Needs  |cFF888888v1.4.1|r")
+    optFrame.TitleText:SetText("|cFFFF6600ICN2|r – Character Needs  |cFF888888v1.5.0|r")
 
     -- Tabs
     tabBtnGeneral = makeTabButton(optFrame, "General", 14, -28, function() selectOptionsTab(1) end)
