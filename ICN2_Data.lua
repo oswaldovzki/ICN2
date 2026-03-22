@@ -16,6 +16,16 @@ ICN2.DEFAULTS = {
         -- "fast" | "medium" | "slow" | "realistic" | "custom"
         preset = "medium",
 
+        -- Only when preset == "custom". Integer 0..CUSTOM_DECAY_MULTIPLIER_MAX (see below).
+        -- Value is passive decay multiplier vs Medium (1×). 0 = none; max = 10× Fast.
+        customDecayBias = {
+            hunger  = 1,
+            thirst  = 1,
+            fatigue = 1,
+        },
+        -- Bumped when customDecayBias scale changes; used for one-time migration from old saves.
+        customDecayBiasVersion = 2,
+
         -- Decay per real-time second (% lost per second) at medium preset (multiplier = 1.0)
         -- hunger/thirst: 100% in 30 min  → 100 / (30×60) ≈ 0.05556% per second
         -- fatigue:       100% in 60 min  → 100 / (60×60) ≈ 0.02778% per second
@@ -61,6 +71,9 @@ ICN2.PRESETS = {
     realistic = 0.15
     -- custom    = 1.0,  -- user sets their own rates directly
 }
+
+-- Custom sliders: 0 = no passive decay; max = 10 × Fast (×3) = ×30 vs Medium base.
+ICN2.CUSTOM_DECAY_MULTIPLIER_MAX = 10 * ICN2.PRESETS.fast
 
 -- ── Situational decay multipliers ─────────────────────────────────────────────
 -- These modify the decay rate based on what the player is doing.

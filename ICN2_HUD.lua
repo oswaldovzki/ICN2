@@ -127,12 +127,12 @@ end
 
 
 -- ── Indicator thresholds (% per second) ──────────────────────────────────────
-local IND_FASTER_UP     =  1.00
-local IND_FAST_UP       =  0.30
+local IND_FASTER_UP     =  0.30
+local IND_FAST_UP       =  0.10
 local IND_UP            =  0.00
 local IND_DOWN          =  0.00
-local IND_FAST_DOWN     = -0.30
-local IND_FASTER_DOWN   = -1.00
+local IND_FAST_DOWN     = -0.10
+local IND_FASTER_DOWN   = -0.30
 
 -- ── Indicator pulse animation ─────────────────────────────────────────────────
 -- Indicators pulse when the net rate is changing in a direction that would cross a threshold
@@ -170,7 +170,7 @@ local function getIndicator(rate)
         return ">>>", 0.0, 1.0, 0.0     -- very fast recovery
     elseif rate >= IND_FAST_UP then
         return ">>",  0.2, 0.9, 0.1     -- fast recovery
-    elseif rate >= IND_UP then
+    elseif rate > IND_UP then
         return ">",   0.7, 0.9, 0.4     -- slow recovery
     elseif rate < IND_FASTER_DOWN then   -- check most extreme first
         return "<<<", 1.0, 0.0, 0.0     -- very fast decay
@@ -392,7 +392,7 @@ function ICN2:BuildHUD()
 
     local configTex = cmdButton1:CreateTexture(nil, "ARTWORK")
     configTex:SetAllPoints()
-    configTex:SetAtlas("poi-workorders")
+    configTex:SetAtlas("glues-characterSelect-icon-notify-inProgress-hover")
 
     cmdButton1:SetScript("OnClick", function()
         ICN2:ToggleOptions()

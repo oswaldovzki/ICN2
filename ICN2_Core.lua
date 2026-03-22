@@ -49,11 +49,41 @@ local function deepCopy(orig) -- for copying tables from DEFAULTS into the saved
     return copy
 end
 
+local function migrateCustomDecayBiasFromLegacy()
+    local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
+    local cb = ICN2DB.settings.customDecayBias
+    if not cb then
+        ICN2DB.settings.customDecayBias = deepCopy(ICN2.DEFAULTS.settings.customDecayBias)
+        return
+    end
+    for _, need in ipairs({ "hunger", "thirst", "fatigue" }) do
+        local v = cb[need]
+        if v == nil then
+            cb[need] = 1
+        else
+            v = tonumber(v) or 0
+            local vi = math.floor(v + 0.5)
+            -- Legacy -10..10 bias scale → multiplier, then integer 0..maxM
+            if v >= -10 and v <= 10 and math.abs(v - vi) < 0.001 then
+                local m = math.max(0, 1 + vi * 0.2)
+                cb[need] = math.max(0, math.min(maxM, math.floor(m + 0.5)))
+            else
+                cb[need] = math.max(0, math.min(maxM, vi))
+            end
+        end
+    end
+end
+
 local function initDB() -- ensures all keys from ICN2.DEFAULTS are present in ICN2DB, without overwriting existing values
     if not ICN2DB then
         ICN2DB = deepCopy(ICN2.DEFAULTS)
         ICN2DB.lastLogout = time()
         return
+    end
+    -- One-time: old -10..10 custom scale → 0..max (must run before merging customDecayBiasVersion from defaults)
+    if ICN2DB.settings.customDecayBiasVersion ~= 2 then
+        migrateCustomDecayBiasFromLegacy()
+        ICN2DB.settings.customDecayBiasVersion = 2
     end
     for k, v in pairs(ICN2.DEFAULTS) do
         if ICN2DB[k] == nil then
@@ -65,6 +95,45 @@ local function initDB() -- ensures all keys from ICN2.DEFAULTS are present in IC
             ICN2DB.settings[k] = (type(v) == "table") and deepCopy(v) or v
         end
     end
+    -- Nested merge for customDecayBias (added after v1.0 saves)
+    local dcb = ICN2.DEFAULTS.settings.customDecayBias
+    if not ICN2DB.settings.customDecayBias then
+        ICN2DB.settings.customDecayBias = deepCopy(dcb)
+    else
+        for k, v in pairs(dcb) do
+            if ICN2DB.settings.customDecayBias[k] == nil then
+                ICN2DB.settings.customDecayBias[k] = v
+            end
+        end
+    end
+end
+
+-- ── Custom decay slider (0..CUSTOM_DECAY_MULTIPLIER_MAX) ───────────────────
+-- Value is passive decay multiplier vs Medium (1×). 0 = no passive decay; max = 10× Fast.
+
+function ICN2:DecayBiasToMultiplier(bias)
+    local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
+    local b = tonumber(bias) or 0
+    if b < 0 then b = 0 elseif b > maxM then b = maxM end
+    return b
+end
+
+-- Preset global multiplier (e.g. fast = 3.0) → same integer scale as the custom sliders (read-only).
+function ICN2:PresetMultiplierToBiasDisplay(mult)
+    local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
+    local m = tonumber(mult) or 1
+    return math.max(0, math.min(maxM, math.floor(m + 0.5)))
+end
+
+function ICN2:GetEffectiveDecayMultiplier(needKey)
+    local s = ICN2DB.settings
+    if s.preset == "custom" then
+        local cb = s.customDecayBias
+        local bias = (cb and cb[needKey])
+        if bias == nil then bias = 1 end
+        return self:DecayBiasToMultiplier(bias)
+    end
+    return ICN2.PRESETS[s.preset] or 1.0
 end
 
 -- ── Offline decay ─────────────────────────────────────────────────────────────
@@ -75,13 +144,16 @@ local function applyOfflineDecay() -- applies decay based on the time elapsed si
     local delta = math.min(time() - ICN2DB.lastLogout, 8 * 3600)
     if delta <= 0 then return end
 
-    local s      = ICN2DB.settings
-    local preset = ICN2.PRESETS[s.preset] or 1.0
-    local rest   = ICN2.SITUATION_MODIFIERS.resting
+    local s    = ICN2DB.settings
+    local rest = ICN2.SITUATION_MODIFIERS.resting
 
-    ICN2DB.hunger  = math.max(0, ICN2DB.hunger  - s.decayRates.hunger  * preset * rest.hunger  * delta)
-    ICN2DB.thirst  = math.max(0, ICN2DB.thirst  - s.decayRates.thirst  * preset * rest.thirst  * delta)
-    ICN2DB.fatigue = math.max(0, ICN2DB.fatigue - s.decayRates.fatigue * preset * rest.fatigue * delta)
+    local mh = ICN2:GetEffectiveDecayMultiplier("hunger")
+    local mt = ICN2:GetEffectiveDecayMultiplier("thirst")
+    local mf = ICN2:GetEffectiveDecayMultiplier("fatigue")
+
+    ICN2DB.hunger  = math.max(0, ICN2DB.hunger  - s.decayRates.hunger  * mh * rest.hunger  * delta)
+    ICN2DB.thirst  = math.max(0, ICN2DB.thirst  - s.decayRates.thirst  * mt * rest.thirst  * delta)
+    ICN2DB.fatigue = math.max(0, ICN2DB.fatigue - s.decayRates.fatigue * mf * rest.fatigue * delta)
 
     ICN2:UpdateHUD()
 end
@@ -135,13 +207,16 @@ end
 --     7. _ApplyWellFedPause       → zeroes hunger decay when Well Fed is active
 
 -- ── 1. Base decay ─────────────────────────────────────────────────────────────
-function ICN2:_ApplyBaseDecay(rates) -- applies the configured base rates × preset multiplier as negative values.
-    local s      = ICN2DB.settings
-    local preset = ICN2.PRESETS[s.preset] or 1.0
+function ICN2:_ApplyBaseDecay(rates) -- applies the configured base rates × preset (or custom per-need bias) as negative values.
+    local s = ICN2DB.settings
 
-    rates.hunger  = rates.hunger  - s.decayRates.hunger  * preset
-    rates.thirst  = rates.thirst  - s.decayRates.thirst  * preset
-    rates.fatigue = rates.fatigue - s.decayRates.fatigue * preset
+    local mh = ICN2:GetEffectiveDecayMultiplier("hunger")
+    local mt = ICN2:GetEffectiveDecayMultiplier("thirst")
+    local mf = ICN2:GetEffectiveDecayMultiplier("fatigue")
+
+    rates.hunger  = rates.hunger  - s.decayRates.hunger  * mh
+    rates.thirst  = rates.thirst  - s.decayRates.thirst  * mt
+    rates.fatigue = rates.fatigue - s.decayRates.fatigue * mf
 end
 
 -- ── 2. Situation modifiers ────────────────────────────────────────────────────
@@ -469,8 +544,10 @@ local function getSituationLabels() -- generates a list of active situation labe
 end
 
 function ICN2:PrintDetails() -- prints detailed information about the current rates, active modifiers, and recovery sources to the chat window for debugging and transparency; called by /icn2 details
-    local s      = ICN2DB.settings
-    local preset = ICN2.PRESETS[s.preset] or 1.0
+    local s = ICN2DB.settings
+    local mh = ICN2:GetEffectiveDecayMultiplier("hunger")
+    local mt = ICN2:GetEffectiveDecayMultiplier("thirst")
+    local mf = ICN2:GetEffectiveDecayMultiplier("fatigue")
     local rates  = ICN2:GetCurrentRates()
     local armor  = armorFatigueCache or ICN2.ARMOR_FATIGUE.CLOTH
     local labels = getSituationLabels()
@@ -488,7 +565,27 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
     local P   = "|cFFFF6600ICN2|r"
     local sep = "|cFF555555--------------------------------|r"
 
-    print(P .. " |cFFFFFF00Details|r — preset: " .. s.preset .. string.format(" (×%.2f)", preset))
+    local presetLine
+    if s.preset == "custom" then
+        local function pbPrint(cb, key)
+            if not cb or cb[key] == nil then return 1 end
+            return math.floor(cb[key])
+        end
+        presetLine = string.format(
+            "custom — H×%.2f  T×%.2f  F×%.2f  (multiplier %d / %d / %d)",
+            mh, mt, mf,
+            pbPrint(s.customDecayBias, "hunger"),
+            pbPrint(s.customDecayBias, "thirst"),
+            pbPrint(s.customDecayBias, "fatigue")
+        )
+    else
+        local dispBias = ICN2:PresetMultiplierToBiasDisplay(ICN2.PRESETS[s.preset] or 1.0)
+        presetLine = string.format("%s (global ×%.2f — slider display %d on 0–%d scale)",
+            s.preset, ICN2.PRESETS[s.preset] or 1.0,
+            dispBias,
+            ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30)
+    end
+    print(P .. " |cFFFFFF00Details|r — " .. presetLine)
     print(sep)
     print(string.format(P .. " |cFF00FF00Hunger|r  %.1f%%  net %+.4f%%/s",  ICN2DB.hunger,  rates.hunger))
     print(string.format(P .. " |cFF4499FFThirst|r  %.1f%%  net %+.4f%%/s",  ICN2DB.thirst,  rates.thirst))
