@@ -39,6 +39,7 @@ ICN2._lastWellFedInstanceID = nil
 ICN2._wellFedPauseExpiry    = 0      -- GetTime() timestamp; 0 = not active
 ICN2._fatigueRecoveryTier   = "none" -- "none" | "slow" | "fast"  (for PrintDetails)
 ICN2._fatigueRecoverySrc    = ""     -- human-readable source list (for PrintDetails)
+ICN2._crossNeedActive       = {}     -- active cross-need rule labels (for PrintDetails)
 
 -- ══ SECTION 1 — Initialization helpers ════════════════════════════════════════
 local function deepCopy(orig) -- for copying tables from DEFAULTS into the saved variable without reference links
@@ -74,13 +75,16 @@ local function migrateCustomDecayBiasFromLegacy() -- one-time migration of old c
     end
 end
 
-local function initDB() -- ensures all keys from ICN2.DEFAULTS are present in ICN2DB, without overwriting existing values
+local function initDB()
     if not ICN2DB then
         ICN2DB = deepCopy(ICN2.DEFAULTS)
         ICN2DB.lastLogout = time()
+        -- New character: start at race max (full pools)
+        ICN2DB.hunger  = ICN2:GetMaxValue("hunger")
+        ICN2DB.thirst  = ICN2:GetMaxValue("thirst")
+        ICN2DB.fatigue = ICN2:GetMaxValue("fatigue")
         return
     end
-    -- One-time: old -10..10 custom scale → 0..max (must run before merging customDecayBiasVersion from defaults)
     if ICN2DB.settings.customDecayBiasVersion ~= 2 then
         migrateCustomDecayBiasFromLegacy()
         ICN2DB.settings.customDecayBiasVersion = 2
@@ -95,7 +99,6 @@ local function initDB() -- ensures all keys from ICN2.DEFAULTS are present in IC
             ICN2DB.settings[k] = (type(v) == "table") and deepCopy(v) or v
         end
     end
-    -- Nested merge for customDecayBias (added after v1.0 saves)
     local dcb = ICN2.DEFAULTS.settings.customDecayBias
     if not ICN2DB.settings.customDecayBias then
         ICN2DB.settings.customDecayBias = deepCopy(dcb)
@@ -105,6 +108,19 @@ local function initDB() -- ensures all keys from ICN2.DEFAULTS are present in IC
                 ICN2DB.settings.customDecayBias[k] = v
             end
         end
+    end
+    -- ── Point migration (v1.6) ────────────────────────────────────────────────
+    -- Old saves stored needs as 0–100 percentages.
+    -- Detect by absence of needsPointVersion flag and convert.
+    if not ICN2DB.settings.needsPointVersion then
+        local maxH = ICN2:GetMaxValue("hunger")
+        local maxT = ICN2:GetMaxValue("thirst")
+        local maxF = ICN2:GetMaxValue("fatigue")
+        ICN2DB.hunger  = math.max(0, math.min(maxH, (ICN2DB.hunger  / 100) * maxH))
+        ICN2DB.thirst  = math.max(0, math.min(maxT, (ICN2DB.thirst  / 100) * maxT))
+        ICN2DB.fatigue = math.max(0, math.min(maxF, (ICN2DB.fatigue / 100) * maxF))
+        ICN2DB.settings.needsPointVersion = 1
+        print("|cFFFF6600ICN2|r Needs migrated to point-based system.")
     end
 end
 
@@ -150,9 +166,13 @@ local function applyOfflineDecay() -- applies decay based on the time elapsed si
     local mt = ICN2:GetEffectiveDecayMultiplier("thirst")
     local mf = ICN2:GetEffectiveDecayMultiplier("fatigue")
 
-    ICN2DB.hunger  = math.max(0, ICN2DB.hunger  - s.decayRates.hunger  * mh * rest.hunger  * delta)
-    ICN2DB.thirst  = math.max(0, ICN2DB.thirst  - s.decayRates.thirst  * mt * rest.thirst  * delta)
-    ICN2DB.fatigue = math.max(0, ICN2DB.fatigue - s.decayRates.fatigue * mf * rest.fatigue * delta)
+    local maxH = ICN2:GetMaxValue("hunger")
+    local maxT = ICN2:GetMaxValue("thirst")
+    local maxF = ICN2:GetMaxValue("fatigue")
+
+    ICN2DB.hunger  = math.max(0, ICN2DB.hunger  - s.decayRates.hunger  * mh * rest.hunger  * (maxH/100) * delta)
+    ICN2DB.thirst  = math.max(0, ICN2DB.thirst  - s.decayRates.thirst  * mt * rest.thirst  * (maxT/100) * delta)
+    ICN2DB.fatigue = math.max(0, ICN2DB.fatigue - s.decayRates.fatigue * mf * rest.fatigue * (maxF/100) * delta)
 
     ICN2:UpdateHUD()
 end
@@ -206,16 +226,18 @@ end
 --     7. _ApplyWellFedPause       → zeroes hunger decay when Well Fed is active
 
 -- ── 1. Base decay ─────────────────────────────────────────────────────────────
-function ICN2:_ApplyBaseDecay(rates) -- applies the configured base rates × preset (or custom per-need bias) as negative values.
-    local s = ICN2DB.settings
-
+function ICN2:_ApplyBaseDecay(rates)
+    local s  = ICN2DB.settings
     local mh = ICN2:GetEffectiveDecayMultiplier("hunger")
     local mt = ICN2:GetEffectiveDecayMultiplier("thirst")
     local mf = ICN2:GetEffectiveDecayMultiplier("fatigue")
-
-    rates.hunger  = rates.hunger  - s.decayRates.hunger  * mh
-    rates.thirst  = rates.thirst  - s.decayRates.thirst  * mt
-    rates.fatigue = rates.fatigue - s.decayRates.fatigue * mf
+    -- decayRates are %/s of a 100-pt baseline; scale to pts/s for this race's pool
+    local maxH = ICN2:GetMaxValue("hunger")
+    local maxT = ICN2:GetMaxValue("thirst")
+    local maxF = ICN2:GetMaxValue("fatigue")
+    rates.hunger  = rates.hunger  - s.decayRates.hunger  * mh * (maxH / 100)
+    rates.thirst  = rates.thirst  - s.decayRates.thirst  * mt * (maxT / 100)
+    rates.fatigue = rates.fatigue - s.decayRates.fatigue * mf * (maxF / 100)
 end
 
 -- ── 2. Situation modifiers ────────────────────────────────────────────────────
@@ -277,38 +299,84 @@ function ICN2:_ApplyRaceClassModifiers(rates) -- Scales the current rates by bio
     end
 end
 
--- ── 4. Armor modifier ─────────────────────────────────────────────────────────
+-- ── 4. Self modifiers (non-linear decay) ─────────────────────────────────────
+-- Boosts a need's decay when it is already low. Only affects negative rates.
+-- Tuning lives entirely in ICN2.SELF_MODIFIER_CURVES in ICN2_Data.lua.
+function ICN2:_ApplySelfModifiers(rates)
+    local curves = ICN2.SELF_MODIFIER_CURVES
+    if not curves then return end
+    for _, need in ipairs({ "hunger", "thirst", "fatigue" }) do
+        local c = curves[need]
+        if c and rates[need] < 0 then
+            local pct  = ICN2:GetNeedPercent(need)
+            local mult = 1.0
+            if pct <= c.crit_threshold then
+                mult = c.crit_mult
+            elseif pct <= c.low_threshold then
+                mult = c.low_mult
+            end
+            if mult ~= 1.0 then rates[need] = rates[need] * mult end
+        end
+    end
+end
+
+-- ── 5. Cross-need modifiers ───────────────────────────────────────────────────
+-- One need's low level accelerates another need's decay rate.
+-- Only modifies delta — never writes directly to need values.
+-- If multiple rules match the same source→target, last match wins (most severe).
+-- Active rule labels stored in ICN2._crossNeedActive for /icn2 details.
+function ICN2:_ApplyCrossNeedModifiers(rates)
+    local rules = ICN2.CROSS_NEED_RULES
+    if not rules then return end
+    ICN2._crossNeedActive = {}
+    -- Collect the winning multiplier per target (last matching rule wins)
+    local effective = {}
+    for _, rule in ipairs(rules) do
+        if ICN2:GetNeedPercent(rule.source) <= rule.threshold then
+            effective[rule.target] = { mult = rule.mult, label = rule.label }
+        end
+    end
+    for target, entry in pairs(effective) do
+        if rates[target] and rates[target] < 0 then
+            rates[target] = rates[target] * entry.mult
+            table.insert(ICN2._crossNeedActive, entry.label)
+        end
+    end
+end
+
+-- ── 6. Armor modifier ─────────────────────────────────────────────────────────
 function ICN2:_ApplyArmorModifier(rates) -- Scales fatigue decay by armor type. Uses the cached armorFatigueCache set by refreshArmorCache(), or defaults to CLOTH if the cache is not yet available.
     local armor = armorFatigueCache or ICN2.ARMOR_FATIGUE.CLOTH
     rates.fatigue = rates.fatigue * armor
 end
 
--- ── 5. Food / drink recovery ──────────────────────────────────────────────────
+-- ── 7. Food / drink recovery ──────────────────────────────────────────────────
 -- Adds a positive trickle to hunger/thirst while the eating/drinking buff is active. The trickle is spread evenly over the buff duration.
 local FOOD_TRICKLE = { simple = 30.0, complex = 40.0, feast = 60.0 }
 
-function ICN2:_ApplyFoodDrinkRecovery(rates) -- checks for active food/drink buffs and applies the appropriate trickle recovery based on tier and duration; also applies thirst recovery during feasts
+function ICN2:_ApplyFoodDrinkRecovery(rates)
     if ICN2:IsEating() then
         local duration = ICN2:GetFoodDuration() or 30
         local tier     = ICN2:GetFoodTier()
         local trickle  = FOOD_TRICKLE[tier] or FOOD_TRICKLE.simple
-        local perSec   = trickle / math.max(1, duration)
+        local maxH     = ICN2:GetMaxValue("hunger")
+        local perSec   = (trickle / math.max(1, duration)) * (maxH / 100)
         rates.hunger   = rates.hunger + perSec
-        -- Feasts also restore thirst during the eating animation
         if tier == "feast" then
-            rates.thirst = rates.thirst + perSec
+            local maxT = ICN2:GetMaxValue("thirst")
+            rates.thirst = rates.thirst + (trickle / math.max(1, duration)) * (maxT / 100)
         end
     end
-
     if ICN2:IsDrinking() then
         local duration = ICN2:GetDrinkDuration() or 30
         local tier     = ICN2:GetDrinkTier()
         local trickle  = FOOD_TRICKLE[tier] or FOOD_TRICKLE.simple
-        rates.thirst   = rates.thirst + (trickle / math.max(1, duration))
+        local maxT     = ICN2:GetMaxValue("thirst")
+        rates.thirst   = rates.thirst + (trickle / math.max(1, duration)) * (maxT / 100)
     end
 end
 
--- ── 6. Fatigue recovery ───────────────────────────────────────────────────────
+-- ── 8. Fatigue recovery ───────────────────────────────────────────────────────
 -- Tiers:
 --   fast → IsResting() AND (nearCampfire OR inHousing)   — ~2 min to full
 --   slow → any single condition                           — ~5 min to full
@@ -326,16 +394,19 @@ function ICN2:_ApplyFatigueRecovery(rates) -- checks for qualifying conditions a
     local src        = {}
     local gain       = 0
     local tier       = "none"
+    local maxF       = ICN2:GetMaxValue("fatigue")
+    local recFast    = ICN2.FATIGUE_RECOVERY.fast * (maxF / 100)
+    local recSlow    = ICN2.FATIGUE_RECOVERY.slow * (maxF / 100)
 
     if st.isResting and (st.nearCampfire or st.inHousing) then
-        gain = ICN2.FATIGUE_RECOVERY.fast
+        gain = recFast
         tier = "fast"
         table.insert(src, "rested area")
         if st.nearCampfire then table.insert(src, "campfire") end
         if st.inHousing    then table.insert(src, "housing")  end
 
     elseif st.isResting or st.isSitting or st.nearCampfire or st.inHousing or isEatDrink then
-        gain = ICN2.FATIGUE_RECOVERY.slow
+        gain = recSlow
         tier = "slow"
         if st.isResting    then table.insert(src, "rested area")     end
         if st.isSitting    then table.insert(src, "sitting")         end
@@ -349,7 +420,7 @@ function ICN2:_ApplyFatigueRecovery(rates) -- checks for qualifying conditions a
     ICN2._fatigueRecoverySrc  = table.concat(src, ", ")
 end
 
--- ── 7. Well Fed pause ─────────────────────────────────────────────────────────
+-- ── 9. Well Fed pause ─────────────────────────────────────────────────────────
 function ICN2:_ApplyWellFedPause(rates) -- if the Well Fed buff was refreshed within the last 5 minutes, pause hunger decay by zeroing out any negative hunger rate; does not affect thirst or fatigue
     if ICN2._wellFedPauseExpiry and GetTime() < ICN2._wellFedPauseExpiry then
         if rates.hunger < 0 then rates.hunger = 0 end
@@ -357,60 +428,73 @@ function ICN2:_ApplyWellFedPause(rates) -- if the Well Fed buff was refreshed wi
 end
 
 -- ── GetCurrentRates — the single public entry point ───────────────────────────
-function ICN2:GetCurrentRates() -- calculates the current hunger/thirst/fatigue rates by applying all modifiers in sequence and returns a table with the final rates; also updates _lastRates for external access and debugging
+-- Pipeline:
+--   1. _ApplyBaseDecay          → sets starting negative rate (pts/s, scaled to race pool)
+--   2. _ApplySituationModifiers → scales by activity/location
+--   3. _ApplyRaceClassModifiers → scales by biological traits
+--   4. _ApplySelfModifiers      → non-linear acceleration at low levels  [Phase 2]
+--   5. _ApplyCrossNeedModifiers → hunger→fatigue coupling                [Phase 2]
+--   6. _ApplyArmorModifier      → fatigue scaled by armor type
+--   7. _ApplyFoodDrinkRecovery  → positive recovery while eating/drinking
+--   8. _ApplyFatigueRecovery    → positive recovery when resting
+--   9. _ApplyWellFedPause       → suppresses hunger decay when Well Fed
+function ICN2:GetCurrentRates()
     local rates = { hunger = 0, thirst = 0, fatigue = 0 }
-
     self:_ApplyBaseDecay(rates)
     self:_ApplySituationModifiers(rates)
     self:_ApplyRaceClassModifiers(rates)
+    self:_ApplySelfModifiers(rates)
+    self:_ApplyCrossNeedModifiers(rates)
     self:_ApplyArmorModifier(rates)
     self:_ApplyFoodDrinkRecovery(rates)
     self:_ApplyFatigueRecovery(rates)
     self:_ApplyWellFedPause(rates)
-
     return rates
 end
 
 -- ══ SECTION 4 — Tick ═══════════════════════════════════════════════════════════
-local function clamp(v) -- utility function to clamp a value between 0 and 100
-    if v < 0   then return 0   end
-    if v > 100 then return 100 end
+local function clamp(v, maxV)
+    maxV = maxV or 100
+    if v < 0    then return 0    end
+    if v > maxV then return maxV end
     return v
 end
 
-local function tick() -- applies the current rates to the player's hunger/thirst/fatigue, clamps the values, updates the HUD, and triggers emotes based on thresholds
-    local oldH = ICN2DB.hunger
-    local oldT = ICN2DB.thirst
-    local oldF = ICN2DB.fatigue
+local function tick()
+    local oldH = ICN2:GetNeedPercent("hunger")
+    local oldT = ICN2:GetNeedPercent("thirst")
+    local oldF = ICN2:GetNeedPercent("fatigue")
 
     local rates = ICN2:GetCurrentRates()
 
-    ICN2DB.hunger  = clamp(ICN2DB.hunger  + rates.hunger)
-    ICN2DB.thirst  = clamp(ICN2DB.thirst  + rates.thirst)
-    ICN2DB.fatigue = clamp(ICN2DB.fatigue + rates.fatigue)
+    ICN2DB.hunger  = clamp(ICN2DB.hunger  + rates.hunger,  ICN2:GetMaxValue("hunger"))
+    ICN2DB.thirst  = clamp(ICN2DB.thirst  + rates.thirst,  ICN2:GetMaxValue("thirst"))
+    ICN2DB.fatigue = clamp(ICN2DB.fatigue + rates.fatigue, ICN2:GetMaxValue("fatigue"))
 
     ICN2._lastRates = rates
 
     ICN2:UpdateHUD()
-    ICN2:CheckEmotes(oldH, oldT, oldF)
+    ICN2:CheckEmotes(oldH, oldT, oldF)  -- emotes receive percentages
 end
 
--- ══ SECTION 5 ══════════════════════════════════════════════════════════════════
--- Manual recovery (slash commands / options panel)
-function ICN2:Eat(amount) -- increases hunger by the specified amount (default 30), clamps to 100, updates the HUD, and triggers a "satisfied" emote for hunger
-    ICN2DB.hunger = clamp(ICN2DB.hunger + (amount or 30))
+-- Manual recovery — amount is in PERCENTAGE (0–100), converted to pts internally.
+function ICN2:Eat(amount)
+    local maxH = ICN2:GetMaxValue("hunger")
+    ICN2DB.hunger = clamp(ICN2DB.hunger + ((amount or 30) / 100 * maxH), maxH)
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "hunger")
 end
 
-function ICN2:Drink(amount) -- increases thirst by the specified amount (default 30), clamps to 100, updates the HUD, and triggers a "satisfied" emote for thirst
-    ICN2DB.thirst = clamp(ICN2DB.thirst + (amount or 30))
+function ICN2:Drink(amount)
+    local maxT = ICN2:GetMaxValue("thirst")
+    ICN2DB.thirst = clamp(ICN2DB.thirst + ((amount or 30) / 100 * maxT), maxT)
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "thirst")
 end
 
-function ICN2:Rest(amount) -- increases fatigue by the specified amount (default 20), clamps to 100, updates the HUD, and triggers a "satisfied" emote for fatigue
-    ICN2DB.fatigue = clamp(ICN2DB.fatigue + (amount or 20))
+function ICN2:Rest(amount)
+    local maxF = ICN2:GetMaxValue("fatigue")
+    ICN2DB.fatigue = clamp(ICN2DB.fatigue + ((amount or 20) / 100 * maxF), maxF)
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "fatigue")
 end
@@ -557,9 +641,10 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
     elseif armor == ICN2.ARMOR_FATIGUE.LEATHER then armorName = "LEATHER"
     end
 
-    local fatigueGain = (ICN2._fatigueRecoveryTier == "fast" and ICN2.FATIGUE_RECOVERY.fast)
-                     or (ICN2._fatigueRecoveryTier == "slow" and ICN2.FATIGUE_RECOVERY.slow)
-                     or 0
+    local maxF       = ICN2:GetMaxValue("fatigue")
+    local fatigueGain = ((ICN2._fatigueRecoveryTier == "fast" and ICN2.FATIGUE_RECOVERY.fast)
+                      or (ICN2._fatigueRecoveryTier == "slow" and ICN2.FATIGUE_RECOVERY.slow)
+                      or 0) * (maxF / 100)
 
     local P   = "|cFFFF6600ICN2|r"
     local sep = "|cFF555555--------------------------------|r"
@@ -586,10 +671,12 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
     end
     print(P .. " |cFFFFFF00Details|r — " .. presetLine)
     print(sep)
-    print(string.format(P .. " |cFF00FF00Hunger|r  %.1f%%  net %+.4f%%/s",  ICN2DB.hunger,  rates.hunger))
-    print(string.format(P .. " |cFF4499FFThirst|r  %.1f%%  net %+.4f%%/s",  ICN2DB.thirst,  rates.thirst))
-    print(string.format(P .. " |cFFFFDD00Fatigue|r %.1f%%  net %+.4f%%/s  (recovery %+.4f/s [%s])",
-        ICN2DB.fatigue, rates.fatigue, fatigueGain, ICN2._fatigueRecoveryTier))
+    print(string.format(P .. " |cFF00FF00Hunger|r  %.1f%%  (%.1f / %d pts)  net %+.4f pts/s",
+        ICN2:GetNeedPercent("hunger"),  ICN2DB.hunger,  ICN2:GetMaxValue("hunger"),  rates.hunger))
+    print(string.format(P .. " |cFF4499FFThirst|r  %.1f%%  (%.1f / %d pts)  net %+.4f pts/s",
+        ICN2:GetNeedPercent("thirst"),  ICN2DB.thirst,  ICN2:GetMaxValue("thirst"),  rates.thirst))
+    print(string.format(P .. " |cFFFFDD00Fatigue|r %.1f%%  (%.1f / %d pts)  net %+.4f pts/s  (recovery %+.4f pts/s [%s])",
+        ICN2:GetNeedPercent("fatigue"), ICN2DB.fatigue, ICN2:GetMaxValue("fatigue"), rates.fatigue, fatigueGain, ICN2._fatigueRecoveryTier))
     print(sep)
     print(P .. " |cFFAAAAAAActive modifiers:|r")
     if #labels == 0 then
@@ -602,6 +689,10 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
         print(string.format("  |cFFCCCCCCfatigue recovery: %s — sources: %s|r",
             ICN2._fatigueRecoveryTier,
             ICN2._fatigueRecoverySrc ~= "" and ICN2._fatigueRecoverySrc or "n/a"))
+    end
+    if ICN2._crossNeedActive and #ICN2._crossNeedActive > 0 then
+        print(string.format("  |cFFFF9900cross-need: %s|r",
+            table.concat(ICN2._crossNeedActive, ", ")))
     end
     print(sep)
     if ICN2:IsEating() then
@@ -630,7 +721,9 @@ SlashCmdList["ICN2"] = function(msg) -- handles slash commands for showing the o
     elseif msg == "rest" then
         ICN2:Rest(40); print("|cFFFF6600ICN2|r You rest. Fatigue restored.")
     elseif msg == "reset" then
-        ICN2DB.hunger = 100; ICN2DB.thirst = 100; ICN2DB.fatigue = 100
+        ICN2DB.hunger  = ICN2:GetMaxValue("hunger")
+        ICN2DB.thirst  = ICN2:GetMaxValue("thirst")
+        ICN2DB.fatigue = ICN2:GetMaxValue("fatigue")
         ICN2:UpdateHUD(); print("|cFFFF6600ICN2|r Needs reset to 100%.")
     elseif msg == "starve" then
         ICN2DB.hunger = 0; ICN2:UpdateHUD()
@@ -643,7 +736,7 @@ SlashCmdList["ICN2"] = function(msg) -- handles slash commands for showing the o
         print("|cFFFF6600ICN2|r |cFFFFDD00Fatigue|r set to 0%.")
     elseif msg == "status" then
         print(string.format("|cFFFF6600ICN2|r Hunger: |cFF00FF00%.1f%%|r  Thirst: |cFF4499FF%.1f%%|r  Fatigue: |cFFFFDD00%.1f%%|r",
-            ICN2DB.hunger, ICN2DB.thirst, ICN2DB.fatigue))
+            ICN2:GetNeedPercent("hunger"), ICN2:GetNeedPercent("thirst"), ICN2:GetNeedPercent("fatigue")))
     elseif msg == "details" then
         ICN2:PrintDetails()
     elseif msg == "hud" then

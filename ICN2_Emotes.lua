@@ -83,7 +83,7 @@ function ICN2:CheckEmotes(oldHunger, oldThirst, oldFatigue)
 
     -- Check hunger threshold crossings (old was ok/low, new is lower tier)
     local oldTH = getTier(oldHunger)
-    local newTH = getTier(ICN2DB.hunger)
+    local newTH = getTier(ICN2:GetNeedPercent("hunger"))
     if oldTH ~= newTH and newTH ~= "ok" then
         -- Only trigger if crossing into critical/low (not out of them)
         local list = ICN2.EMOTES.hungry[newTH]
@@ -96,7 +96,7 @@ function ICN2:CheckEmotes(oldHunger, oldThirst, oldFatigue)
     if not fired then
         -- Check thirst if no hunger emote fired
         local oldTT = getTier(oldThirst)
-        local newTT = getTier(ICN2DB.thirst)
+        local newTT = getTier(ICN2:GetNeedPercent("thirst"))
         if oldTT ~= newTT and newTT ~= "ok" then
             local list = ICN2.EMOTES.thirsty[newTT]
             if list then
@@ -109,7 +109,7 @@ function ICN2:CheckEmotes(oldHunger, oldThirst, oldFatigue)
     if not fired then
         -- Check fatigue if no other emotes fired
         local oldTF = getTier(oldFatigue)
-        local newTF = getTier(ICN2DB.fatigue)
+        local newTF = getTier(ICN2:GetNeedPercent("fatigue"))
         if oldTF ~= newTF and newTF ~= "ok" then
             local list = ICN2.EMOTES.tired[newTF]
             if list then

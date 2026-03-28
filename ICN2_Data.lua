@@ -7,7 +7,7 @@ ICN2 = ICN2 or {}  -- Safely initialize the global ICN2 table to avoid overwriti
 
 -- ── Default SavedVariables structure ──────────────────────────────────────────
 ICN2.DEFAULTS = {
-    hunger  = 100.0,   -- percentage 0-100
+    hunger  = 100.0,   -- stored in race-specific points (0–maxValue); Human baseline = 100
     thirst  = 100.0,
     fatigue = 100.0,
     lastLogout = nil,  -- timestamp via time()
@@ -166,13 +166,124 @@ ICN2.EMOTES = {
 
 -- ── Threshold levels (% remaining) ───────────────────────────────────────────
 -- "critical" ≤ 15%, "low" ≤ 35%, "ok" > 35%
+-- Thresholds are always percentages (0–100) regardless of point pool size.
 ICN2.THRESHOLDS = {
     critical = 15,
     low      = 35,
     ok       = 100,
 }
 
--- ── Armor type fatigue multipliers ────────────────────────────────────────────
+-- ── Race max values (point pools) ─────────────────────────────────────────────
+-- Defines how large each need's pool is per race. Larger pools mean the need
+-- takes longer to deplete in absolute game time — a Tauren stays fed longer
+-- than a Gnome even at the same %/s decay rate.
+-- Human = 100/100/100 is the baseline. All other values are relative to that.
+ICN2.RACE_MAX_VALUES = {
+    -- Horde
+    ["Orc"]                = { hunger = 110, thirst = 100, fatigue = 110 },
+    ["Scourge"]            = { hunger =  30, thirst =  30, fatigue =  90 },  -- undead: minimal food/water needs
+    ["Tauren"]             = { hunger = 130, thirst = 110, fatigue = 120 },  -- large body, great endurance
+    ["Troll"]              = { hunger = 105, thirst = 110, fatigue = 100 },
+    ["BloodElf"]           = { hunger =  90, thirst =  95, fatigue =  95 },
+    ["Goblin"]             = { hunger =  85, thirst =  85, fatigue =  85 },
+    ["Nightborne"]         = { hunger =  80, thirst =  80, fatigue =  70 },  -- sustained by arcane
+    ["HighmountainTauren"] = { hunger = 125, thirst = 110, fatigue = 125 },
+    ["MagharOrc"]          = { hunger = 115, thirst = 105, fatigue = 115 },
+    ["Vulpera"]            = { hunger =  80, thirst =  70, fatigue =  90 },  -- desert-adapted: small but efficient
+    ["ZandalariTroll"]     = { hunger = 110, thirst = 105, fatigue = 105 },
+    -- Alliance
+    ["Human"]              = { hunger = 100, thirst = 100, fatigue = 100 },  -- baseline
+    ["Dwarf"]              = { hunger = 115, thirst = 105, fatigue = 110 },
+    ["NightElf"]           = { hunger =  90, thirst =  95, fatigue = 105 },
+    ["Gnome"]              = { hunger =  75, thirst =  75, fatigue =  75 },  -- small frame, small pools
+    ["Draenei"]            = { hunger =  95, thirst =  90, fatigue = 105 },
+    ["Worgen"]             = { hunger = 115, thirst = 100, fatigue = 100 },
+    ["VoidElf"]            = { hunger =  85, thirst =  90, fatigue =  95 },
+    ["LightforgedDraenei"] = { hunger =  90, thirst =  85, fatigue = 110 },
+    ["DarkIronDwarf"]      = { hunger = 110, thirst = 100, fatigue = 105 },
+    ["KulTiran"]           = { hunger = 120, thirst = 105, fatigue = 110 },
+    ["Mechagnome"]         = { hunger =  60, thirst =  50, fatigue =  80 },  -- cybernetic body
+    -- Neutral/Other
+    ["Pandaren"]           = { hunger = 110, thirst = 100, fatigue = 100 },
+    ["Dracthyr"]           = { hunger =  95, thirst =  90, fatigue =  95 },
+    ["EarthenDwarf"]       = { hunger =  70, thirst =  60, fatigue =  85 },  -- stone body
+}
+
+-- ── Need helpers ──────────────────────────────────────────────────────────────
+-- Returns the max point value for a need given the player's race.
+-- Falls back to 100 for any race not in RACE_MAX_VALUES.
+function ICN2:GetMaxValue(need)
+    local race = select(2, UnitRace and UnitRace("player") or "Human", "")
+    local raceMax = ICN2.RACE_MAX_VALUES[race]
+    if raceMax and raceMax[need] then return raceMax[need] end
+    return 100
+end
+
+-- Returns the current need as a 0–100 percentage (used by HUD, emotes, thresholds).
+function ICN2:GetNeedPercent(need)
+    local current = ICN2DB and ICN2DB[need] or 0
+    local maxVal  = ICN2:GetMaxValue(need)
+    return (current / maxVal) * 100
+end
+
+-- ── Self-modifier curves (Phase 2 — non-linear decay) ─────────────────────────
+-- When a need is already low, its decay accelerates — creating urgency without
+-- punishing the player at normal levels.
+--
+-- Breakpoints (percentages):
+--   above low_threshold  → multiplier = 1.0  (no change)
+--   low to critical      → low_mult           (mild acceleration)
+--   at/below critical    → crit_mult          (strong acceleration)
+--
+-- Only applies to decay (negative rates). Recovery is never scaled here.
+ICN2.SELF_MODIFIER_CURVES = {
+    hunger = {
+        low_threshold  = 35,   -- matches ICN2.THRESHOLDS.low
+        crit_threshold = 15,   -- matches ICN2.THRESHOLDS.critical
+        low_mult       = 1.10, -- 25% faster between low and critical
+        crit_mult      = 1.20, -- 60% faster at critical (starving panic)
+    },
+    thirst = {
+        low_threshold  = 35,
+        crit_threshold = 15,
+        low_mult       = 1.15, -- thirst accelerates slightly more than hunger
+        crit_mult      = 1.30, -- dehydration is acutely urgent
+    },
+    fatigue = {
+        low_threshold  = 35,
+        crit_threshold = 15,
+        low_mult       = 1.20,
+        crit_mult      = 1.40,
+    },
+}
+
+-- ── Cross-need rules (Phase 2 — inter-need coupling) ──────────────────────────
+-- One need's low level can accelerate another need's decay rate.
+-- Rules only influence delta calculations — never direct value writes.
+-- Kept to a small number to stay debuggable.
+--
+-- If multiple rules match the same source→target pair, the last matching rule
+-- wins (most severe threshold takes effect).
+--
+-- label is shown in /icn2 details when the rule is active.
+ICN2.CROSS_NEED_RULES = {
+    {
+        source    = "hunger",
+        target    = "fatigue",
+        threshold = 35,    -- activates below 35% hunger
+        mult      = 1.15,
+        label     = "hungry→fatigue×1.15",
+    },
+    {
+        source    = "hunger",
+        target    = "fatigue",
+        threshold = 15,    -- stronger effect below 15% (overrides above)
+        mult      = 1.35,
+        label     = "starving→fatigue×1.35",
+    },
+}
+
+-- ── Housing zone detection ────────────────────────────────────────────────────
 ICN2.ARMOR_FATIGUE = {
     PLATE  = 1.20, -- heaviest armor causes more fatigue
     MAIL   = 1.10, -- medium armor has a moderate effect

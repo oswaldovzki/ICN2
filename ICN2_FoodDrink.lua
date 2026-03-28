@@ -102,7 +102,8 @@ local function detectTierFromBags(isFeast)
         if numSlots and numSlots > 0 then
             for slot = 1, numSlots do
                 local itemLink = C_Container.GetContainerItemLink(bag, slot)
-                if itemLink then
+                -- Skip non-item links (battle pets, spells, currency, etc.)
+                if itemLink and itemLink:find("|Hitem:", 1, true) then
                     -- Extract item ID from the item link
                     local itemID = C_Item.GetItemIDByGUID and
                         select(1, strsplit(":", itemLink:match("|Hitem:([%d:]+)|"))) or nil
@@ -168,11 +169,13 @@ local function applyBonus(state, need, natural) -- On natural completion we add 
     local isFeast = state.tier == "feast"
 
     if need == "hunger" or isFeast then
-        ICN2DB.hunger = math.min(100, ICN2DB.hunger + bonus)
+        local maxH = ICN2:GetMaxValue("hunger")
+        ICN2DB.hunger = math.min(maxH, ICN2DB.hunger + (bonus / 100 * maxH))
         ICN2:TriggerEmote("satisfied", "hunger")
     end
     if need == "thirst" or isFeast then
-        ICN2DB.thirst = math.min(100, ICN2DB.thirst + bonus)
+        local maxT = ICN2:GetMaxValue("thirst")
+        ICN2DB.thirst = math.min(maxT, ICN2DB.thirst + (bonus / 100 * maxT))
         ICN2:TriggerEmote("satisfied", "thirst")
     end
 
@@ -188,6 +191,7 @@ end
 -- Main function called on UNIT_AURA events. Handles food, drink, and well-fed aura detection.
 -- More reliable than native buff events as it catches buffs that apply/expire during combat.
 function ICN2:OnUnitAura()
+    -- CRITICAL: Skip aura scanning in combat to avoid tainted encounter buffs
     if UnitAffectingCombat("player") then return end
 
     local now = GetTime()
@@ -195,7 +199,6 @@ function ICN2:OnUnitAura()
     -- ── Food aura handling ─────────────────────────────────────────────────────
     local foodAura = findAura(FOOD_AURA_PATTERNS)
     if foodAura then
-        -- Food aura is active - start or continue tracking
         if not foodState.active then
             foodState.active    = true
             foodState.startTime = now
@@ -203,10 +206,9 @@ function ICN2:OnUnitAura()
             foodState.tier      = detectFoodTier(foodAura)
         end
     else
-        -- Food aura ended - apply completion bonus if natural
         if foodState.active then
             local elapsed = now - (foodState.startTime or now)
-            local natural = elapsed >= (foodState.duration or 30) * 0.85  -- 85% completion threshold
+            local natural = elapsed >= (foodState.duration or 30) * 0.85
             applyBonus(foodState, "hunger", natural)
             foodState.active    = false
             foodState.startTime = nil
@@ -218,7 +220,6 @@ function ICN2:OnUnitAura()
     -- ── Well Fed aura handling ────────────────────────────────────────────────
     local wellFedAura = findAura(WELLFED_PATTERNS)
     if wellFedAura then
-        -- New well-fed aura detected - start hunger pause
         local id = wellFedAura.auraInstanceID or 0
         if id ~= ICN2._lastWellFedInstanceID then
             ICN2._lastWellFedInstanceID = id
@@ -229,14 +230,11 @@ function ICN2:OnUnitAura()
         end
     else
         ICN2._lastWellFedInstanceID = nil
-        -- Do NOT clear _wellFedPauseExpiry here — the pause runs its full
-        -- 5 minutes even if the aura drops before the timer expires.
     end
 
     -- ── Drink aura handling ───────────────────────────────────────────────────
     local drinkAura = findAura(DRINK_AURA_PATTERNS, DRINK_EXTRA_PATTERNS)
     if drinkAura then
-        -- Drink aura is active - start or continue tracking
         if not drinkState.active then
             drinkState.active    = true
             drinkState.startTime = now
@@ -244,7 +242,6 @@ function ICN2:OnUnitAura()
             drinkState.tier      = detectDrinkTier()
         end
     else
-        -- Drink aura ended - apply completion bonus if natural
         if drinkState.active then
             local elapsed = now - (drinkState.startTime or now)
             local natural = elapsed >= (drinkState.duration or 30) * 0.85

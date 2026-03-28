@@ -332,9 +332,9 @@ function ICN2:BuildOptions()
     resetBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 278, -474)
     resetBtn:SetText("|cFFFF4444Reset|r")
     resetBtn:SetScript("OnClick", function()
-        ICN2DB.hunger  = 100
-        ICN2DB.thirst  = 100
-        ICN2DB.fatigue = 100
+        ICN2DB.hunger  = ICN2:GetMaxValue("hunger")
+        ICN2DB.thirst  = ICN2:GetMaxValue("thirst")
+        ICN2DB.fatigue = ICN2:GetMaxValue("fatigue")
         ICN2:UpdateHUD()
     end)
 

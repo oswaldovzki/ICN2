@@ -311,9 +311,9 @@ function ICN2:BuildHUD()
     hudFrame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("|cFFFF6600ICN2 - Character Needs|r", 1, 1, 1)
-        GameTooltip:AddLine(string.format("Hunger:  %.1f%%", ICN2DB.hunger),  0.2, 0.8, 0.2)
-        GameTooltip:AddLine(string.format("Thirst:  %.1f%%", ICN2DB.thirst),  0.2, 0.5, 1.0)
-        GameTooltip:AddLine(string.format("Fatigue: %.1f%%", ICN2DB.fatigue), 1.0, 0.85, 0.1)
+        GameTooltip:AddLine(string.format("Hunger:  %.1f%%", ICN2:GetNeedPercent("hunger")),  0.2, 0.8, 0.2)
+        GameTooltip:AddLine(string.format("Thirst:  %.1f%%", ICN2:GetNeedPercent("thirst")),  0.2, 0.5, 1.0)
+        GameTooltip:AddLine(string.format("Fatigue: %.1f%%", ICN2:GetNeedPercent("fatigue")), 1.0, 0.85, 0.1)
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("|cFFAAAAAA/icn2 details|r", 0.7, 0.7, 0.7)
         GameTooltip:Show()
@@ -666,7 +666,11 @@ function ICN2:UpdateHUD()
     if not ICN2DB.settings.hudEnabled then hudFrame:Hide(); return end
     hudFrame:Show()
 
-    local values = { hunger = ICN2DB.hunger, thirst = ICN2DB.thirst, fatigue = ICN2DB.fatigue }
+    local values = {
+        hunger  = ICN2:GetNeedPercent("hunger"),
+        thirst  = ICN2:GetNeedPercent("thirst"),
+        fatigue = ICN2:GetNeedPercent("fatigue"),
+    }
     local rates  = ICN2:GetCurrentRates()
     local mode   = getTheme().mode
 
