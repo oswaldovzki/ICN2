@@ -253,6 +253,43 @@ function ICN2:BuildOptions()
         end
     end)
 
+    local LABEL_MODES = {
+    { id = "none",       label = "None" },
+    { id = "percentage", label = "Percentage" },
+    { id = "number",     label = "Number" },
+    { id = "both",       label = "Both" },
+}
+
+    local labelDropdown = CreateFrame("Frame", "ICN2LabelDropdown", panelGeneral, "UIDropDownMenuTemplate")
+    labelDropdown:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 188, -70)
+
+    local function labelModeLabel()
+        local current = ICN2DB.settings.barLabelMode or "percentage"
+        for _, lm in ipairs(LABEL_MODES) do
+            if lm.id == current then return lm.label end
+        end
+        return "Percentage"
+    end
+
+    UIDropDownMenu_SetWidth(labelDropdown, 140)
+    UIDropDownMenu_SetText(labelDropdown, labelModeLabel())
+
+    UIDropDownMenu_Initialize(labelDropdown, function(self, level)
+        for _, lm in ipairs(LABEL_MODES) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text    = lm.label
+            info.value   = lm.id
+            info.checked = (ICN2DB.settings.barLabelMode or "percentage") == lm.id
+            info.func    = function()
+                ICN2DB.settings.barLabelMode = lm.id
+                UIDropDownMenu_SetText(labelDropdown, lm.label)
+                CloseDropDownMenus()
+                ICN2:UpdateHUD()
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+
     makeSlider(panelGeneral, "Opacity", 14, -84, 0.1, 1.0, 0.05,
         function() return ICN2DB.settings.hudAlpha end,
         function(v)

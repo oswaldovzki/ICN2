@@ -181,7 +181,7 @@ ICN2.THRESHOLDS = {
 ICN2.RACE_MAX_VALUES = {
     -- Horde
     ["Orc"]                = { hunger = 110, thirst = 100, fatigue = 110 },
-    ["Scourge"]            = { hunger =  30, thirst =  30, fatigue =  90 },  -- undead: minimal food/water needs
+    ["Scourge"]            = { hunger =  80, thirst =  70, fatigue = 120 },  -- undead: minimal food/water needs
     ["Tauren"]             = { hunger = 130, thirst = 110, fatigue = 120 },  -- large body, great endurance
     ["Troll"]              = { hunger = 105, thirst = 110, fatigue = 100 },
     ["BloodElf"]           = { hunger =  90, thirst =  95, fatigue =  95 },

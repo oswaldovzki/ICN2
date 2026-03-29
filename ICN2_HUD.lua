@@ -1,5 +1,5 @@
 -- ============================================================
--- ICN2_HUD.lua  (v1.5.0)
+-- ICN2_HUD.lua  (v1.7.0)
 -- On-screen HUD: hunger, thirst, fatigue.
 -- Draggable, scalable, fully theme-driven.
 --
@@ -25,12 +25,13 @@
 --   .barBG           Texture       bar track background  (slot)
 --   .barFill         StatusBar     animated fill         (slot)
 --   .barOverlay      Texture       above-fill decoration (slot)
---   .barLabel        FontString    percentage text
+--   .barLabelLeft    FontString    left label (percentage or number)
+--   .barLabelRight   FontString    right label (percentage or number)
 --   .glyphText       FontString    > >> <<< etc.
 --   .setPulse(bool)  function      starts/stops glyph pulse
 --
 -- ── Theme descriptor fields ───────────────────────────────────
--- chrome.cornerTL/TR/BL/BR  string|nil  atlas name
+-- chrome.cornerTL/TR/BL/BR   string|nil  atlas name
 -- chrome.edgeTop/Bottom      string|nil
 -- chrome.edgeLeft/Right      string|nil
 -- chrome.bgCenter            string|{r,g,b,a}  atlas or solid color
@@ -236,7 +237,7 @@ local PULSE_MAX    = 1.0
 
 local function shouldPulse(glyph)  return glyph ~= "##"  end
 
-local function getNeedColor(key, val)
+local function getNeedColor(key, val) -- returns r,g,b in 0..1 range
     if val <= ICN2.THRESHOLDS.critical then return 0.9, 0.1, 0.1
     elseif val <= ICN2.THRESHOLDS.low  then return 0.9, 0.6, 0.1
     else
@@ -265,7 +266,7 @@ end
 --   nil          → Hide
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-local function applyTexSlot(tex, value)
+local function applyTexSlot(tex, value) -- string|{r,g,b,a}|nil
     if not tex then return end
     if value == nil then
         tex:Hide()
@@ -278,11 +279,9 @@ local function applyTexSlot(tex, value)
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SECTION 4 — Build HUD (runs once at ADDON_LOADED)
--- ═══════════════════════════════════════════════════════════════════════════════
+-- ══  SECTION 4 — Build HUD  ════════════════════════════════════════════════════
 
-function ICN2:BuildHUD()
+function ICN2:BuildHUD() -- called once on demand when HUD is first shown; builds entire frame hierarchy and saves references in module state
     local s        = ICN2DB.settings
     local barScale = s.hudBarScale or 1.0
     local barW     = math.floor(BASE_BAR_W * barScale)
@@ -433,9 +432,15 @@ function ICN2:BuildHUD()
         barFill:SetStatusBarColor(fc[1], fc[2], fc[3])
 
         -- Percentage label
-        local barLabel = barFill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        barLabel:SetPoint("RIGHT", barFill, "RIGHT", -3, 0)
-        barLabel:SetText("100%")
+        local barLabelLeft = barFill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        barLabelLeft:SetPoint("LEFT", barFill, "LEFT", 3, 0)
+        barLabelLeft:SetText("")
+        barLabelLeft:Hide()
+
+        local barLabelRight = barFill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        barLabelRight:SetPoint("RIGHT", barFill, "RIGHT", -3, 0)
+        barLabelRight:SetText("")
+        barLabelRight:Hide()
 
         -- Decorative overlay above fill  (slot: barOverlay)
         local barOverlay = barFrame:CreateTexture(nil, "OVERLAY")
@@ -499,7 +504,7 @@ function ICN2:BuildHUD()
         end
 
         -- ── Glyph indicator + pulse ────────────────────────────────────────────
-        local glyphText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        local glyphText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge") -- separate from bar labels so it can pulse independently
         glyphText:SetPoint("RIGHT", rowFrame, "RIGHT", -2, 0)
         glyphText:SetText("##")
         glyphText:SetTextColor(0.5, 0.5, 0.5)
@@ -519,16 +524,17 @@ function ICN2:BuildHUD()
         end)
 
         bars[key] = {
-            rowFrame   = rowFrame,
-            icon       = icon,
-            barFrame   = barFrame,
-            barBG      = barBG,
-            barFill    = barFill,
-            barOverlay = barOverlay,
-            barLabel   = barLabel,
-            blocks     = blockFrames,
-            glyphText  = glyphText,
-            setPulse   = function(active)
+            rowFrame      = rowFrame,
+            icon          = icon,
+            barFrame      = barFrame,
+            barBG         = barBG,
+            barFill       = barFill,
+            barOverlay    = barOverlay,
+            barLabelLeft  = barLabelLeft,
+            barLabelRight = barLabelRight,
+            blocks        = blockFrames,
+            glyphText     = glyphText,
+            setPulse      = function(active)
                 pulseRunning = active
                 if not active then
                     pulseElapsed = 0
@@ -550,12 +556,9 @@ function ICN2:BuildHUD()
     if not s.hudEnabled then hudFrame:Hide() end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SECTION 5 — Theme application
--- Walks every named slot; assigns textures/colors from the descriptor.
--- ═══════════════════════════════════════════════════════════════════════════════
+-- ═══ SECTION 5 — Theme application ══════════════════════════════════════════
 
-function ICN2:ApplyHUDTheme(themeId)
+function ICN2:ApplyHUDTheme(themeId) -- walks theme descriptor and applies textures/colors to named slots; called on theme change and on initial build
     if not hudFrame then return end
 
     local theme = ICN2.HUD_THEMES[themeId] or ICN2.HUD_THEMES.smooth
@@ -625,11 +628,8 @@ function ICN2:SetBlockyBars(enabled)  -- legacy shim
     ICN2:SetBarTheme(enabled and "blocky" or "smooth")
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SECTION 6 — Bar mode (smooth vs blocky)
--- ═══════════════════════════════════════════════════════════════════════════════
-
-function ICN2:ApplyBarMode()
+-- ══  SECTION 6 — Bar mode  ═════════════════════════════════════════════════════
+function ICN2:ApplyBarMode() -- show/hide bar fill vs blocks based on current theme.mode; called from ApplyHUDTheme and on initial build
     if not hudFrame then return end
     local mode = getTheme().mode
 
@@ -639,15 +639,17 @@ function ICN2:ApplyBarMode()
             if mode == "blocky" then
                 data.barFill:Hide()
                 data.barBG:Hide()
-                data.barLabel:Hide()
+                data.barLabelLeft:Hide()
+                data.barLabelRight:Hide()
                 data.barOverlay:Hide()
                 for _, bf in ipairs(data.blocks) do
                     for _, tex in ipairs(bf.geo) do tex:Show() end
                 end
             else
+                -- Smooth mode: show smooth bar, hide blocks
                 data.barFill:Show()
                 data.barBG:Show()
-                data.barLabel:Show()
+                -- Labels handled by UpdateHUD based on labelMode
                 for _, bf in ipairs(data.blocks) do
                     bf.fill:Hide()
                     for _, tex in ipairs(bf.geo) do tex:Hide() end
@@ -657,11 +659,8 @@ function ICN2:ApplyBarMode()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SECTION 7 — Update loop (every tick)
--- ═══════════════════════════════════════════════════════════════════════════════
-
-function ICN2:UpdateHUD()
+-- ══  SECTION 7 — Update loop  ═══════════════════════════════════════════════════
+function ICN2:UpdateHUD() -- called every tick from OnUpdate script; updates bar fill levels, colors, labels, and indicators based on current need values and rates
     if not hudFrame then return end
     if not ICN2DB.settings.hudEnabled then hudFrame:Hide(); return end
     hudFrame:Show()
@@ -671,10 +670,11 @@ function ICN2:UpdateHUD()
         thirst  = ICN2:GetNeedPercent("thirst"),
         fatigue = ICN2:GetNeedPercent("fatigue"),
     }
-    local rates  = ICN2:GetCurrentRates()
-    local mode   = getTheme().mode
+    local rates     = ICN2:GetCurrentRates()
+    local mode      = getTheme().mode
+    local labelMode = ICN2DB.settings.barLabelMode or "percentage"
 
-    for _, key in ipairs(NEED_KEYS) do
+    for _, key in ipairs(NEED_KEYS) do -- main loop: update each bar based on current value/rate and theme mode
         local data = bars[key]
         if data then
             local val     = values[key] or 0
@@ -694,7 +694,28 @@ function ICN2:UpdateHUD()
             else
                 data.barFill:SetValue(val)
                 data.barFill:SetStatusBarColor(r, g, b)
-                data.barLabel:SetText(string.format("%.0f%%", val))
+                local current = ICN2DB[key] or 0
+                local maxVal  = ICN2:GetMaxValue(key)
+                local pctText = string.format("%.0f%%", val)
+                local numText = string.format("%.0f/%.0f", current, maxVal)
+
+                if labelMode == "none" then
+                    data.barLabelLeft:Hide()
+                    data.barLabelRight:Hide()
+                elseif labelMode == "percentage" then
+                    data.barLabelLeft:Hide()
+                    data.barLabelRight:SetText(pctText)
+                    data.barLabelRight:Show()
+                elseif labelMode == "number" then
+                    data.barLabelLeft:Hide()
+                    data.barLabelRight:SetText(numText)
+                    data.barLabelRight:Show()
+                elseif labelMode == "both" then
+                    data.barLabelLeft:SetText(numText)
+                    data.barLabelLeft:Show()
+                    data.barLabelRight:SetText(pctText)
+                    data.barLabelRight:Show()
+                end
             end
 
             local glyph, ir, ig, ib = getIndicator(rates[key] or 0)
@@ -705,11 +726,8 @@ function ICN2:UpdateHUD()
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SECTION 8 — Resize / Lock
--- ═══════════════════════════════════════════════════════════════════════════════
-
-function ICN2:ResizeBarLength()
+-- ══  SECTION 8 — Resize / Lock  ════════════════════════════════════════════════
+function ICN2:ResizeBarLength() -- called when user changes bar scale; recalculates bar and frame widths and applies to all relevant elements
     if not hudFrame then return end
 
     local barScale = ICN2DB.settings.hudBarScale or 1.0
@@ -729,6 +747,6 @@ function ICN2:ResizeBarLength()
     end
 end
 
-function ICN2:LockHUD(locked)
+function ICN2:LockHUD(locked) -- called when user toggles HUD lock; enables/disables mouse interaction on hudFrame to allow dragging when unlocked
     if hudFrame then hudFrame:EnableMouse(not locked) end
 end
