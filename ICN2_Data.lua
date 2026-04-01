@@ -93,36 +93,70 @@ ICN2.SITUATION_MODIFIERS = {
 -- 1.0 = normal, >1.0 = decays faster, <1.0 = decays slower
 ICN2.RACE_MODIFIERS = {
     -- Horde
-    ["Orc"]            = { hunger = 0.9,  thirst = 1.0,  fatigue = 0.9  },
-    ["Scourge"]        = { hunger = 0.5,  thirst = 0.5,  fatigue = 0.8  },  -- undead don't need food/water, but still get tired from body parts decaying
-    ["Tauren"]         = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.85 },
-    ["Troll"]          = { hunger = 1.0,  thirst = 1.1,  fatigue = 1.0  },
-    ["BloodElf"]       = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  },
-    ["Goblin"]         = { hunger = 1.2,  thirst = 1.2,  fatigue = 1.1  },  -- hyperactive metabolism
-    ["Nightborne"]     = { hunger = 1.3,  thirst = 1.3,  fatigue = 1.5  },  -- arcane addiction causes faster decay away from the Nightwell
-    ["HighmountainTauren"] = { hunger = 1.15, thirst = 1.0, fatigue = 0.8 },
-    ["MagharOrc"]      = { hunger = 0.85, thirst = 0.9,  fatigue = 0.85 },
-    ["Vulpera"]        = { hunger = 1.1,  thirst = 0.8,  fatigue = 1.0  },  -- desert dwellers: conserve water
-    ["ZandalariTroll"] = { hunger = 1.0,  thirst = 1.0,  fatigue = 0.9  },
+    ["Orc"]                 = { hunger = 0.95, thirst = 1.00, fatigue = 0.92 }, -- strong constitution, excellent endurance},
+    ["Scourge"]             = { hunger = 0.60, thirst = 0.75, fatigue = 0.70 }, -- undead don't need food/water, but still get tired from body parts decaying
+    ["Tauren"]              = { hunger = 1.08, thirst = 1.00, fatigue = 0.88 }, -- large body, great endurance: big appetite but slower fatigue
+    ["Troll"]               = { hunger = 1.00, thirst = 1.08, fatigue = 1.00 }, -- regeneration balances tropical thirst, but active lifestyle causes more hunger and fatigue
+    ["BloodElf"]            = { hunger = 1.00, thirst = 1.00, fatigue = 1.00 }, -- refined but unremarkable needs
+    ["Goblin"]              = { hunger = 1.15, thirst = 1.15, fatigue = 1.12 }, -- hyperactive metabolism and high-stress lifestyle cause faster decay, but small frame means they burn through reserves quicker
+    ["Nightborne"]          = { hunger = 1.22, thirst = 1.22, fatigue = 1.35 }, -- arcane realiance causes faster decay
+    ["HighmountainTauren"]  = { hunger = 1.10, thirst = 1.00, fatigue = 0.85 }, -- mountain endurance, hearty appetite: slightly faster hunger, but slower fatigue
+    ["MagharOrc"]           = { hunger = 0.90, thirst = 0.93, fatigue = 0.88 }, -- Draenor-hardened survivors: slower decay due to harsh upbringing
+    ["Vulpera"]             = { hunger = 1.08, thirst = 0.60, fatigue = 1.02 }, -- Desert adaptation: amazing water conservation
+    ["ZandalariTroll"]      = { hunger = 1.00, thirst = 1.00, fatigue = 0.93 }, -- Proud empire builders, balanced
 
     -- Alliance
-    ["Human"]          = { hunger = 1.0,  thirst = 1.0,  fatigue = 1.0  }, -- baseline
-    ["Dwarf"]          = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.9  },
-    ["NightElf"]       = { hunger = 0.85, thirst = 0.9,  fatigue = 0.85 },
-    ["Gnome"]          = { hunger = 1.2,  thirst = 1.2,  fatigue = 1.2  },  -- small + fast = burns more
-    ["Draenei"]        = { hunger = 0.8,  thirst = 0.85, fatigue = 0.8  },
-    ["Worgen"]         = { hunger = 1.3,  thirst = 1.1,  fatigue = 1.1  },
-    ["VoidElf"]        = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.9  },
-    ["LightforgedDraenei"] = { hunger = 0.75, thirst = 0.8, fatigue = 0.75 },
-    ["DarkIronDwarf"]  = { hunger = 1.1,  thirst = 1.0,  fatigue = 0.9  },
-    ["KulTiran"]       = { hunger = 1.05, thirst = 1.0,  fatigue = 0.95 },
-    ["Mechagnome"]     = { hunger = 0.7,  thirst = 0.6,  fatigue = 0.7  },  -- cybernetic body
+    ["Human"]               = { hunger = 1.00, thirst = 1.00, fatigue = 1.00 }, -- baseline
+    ["Dwarf"]               = { hunger = 1.05, thirst = 1.00, fatigue = 0.95 }, -- Hardy mountain folk: great stamina, moderate hunger
+    ["NightElf"]            = { hunger = 0.90, thirst = 0.92, fatigue = 0.88 }, -- Efficient metabolism, excellent rest
+    ["Gnome"]               = { hunger = 1.12, thirst = 1.12, fatigue = 1.10 }, -- Small frame = small reserves, fast burn
+    ["Draenei"]             = { hunger = 0.88, thirst = 0.90, fatigue = 0.85 }, -- Light-sustained endurance
+    ["Worgen"]              = { hunger = 1.15, thirst = 1.05, fatigue = 1.08 }, -- Cursed metabolism causes faster decay, but also more reserves
+    ["VoidElf"]             = { hunger = 0.92, thirst = 0.93, fatigue = 0.90 }, -- Void-touched efficiency
+    ["LightforgedDraenei"]  = { hunger = 0.85, thirst = 0.88, fatigue = 0.80 }, -- Light-sustained endurance, but relentless warriors
+    ["DarkIronDwarf"]       = { hunger = 1.05, thirst = 1.02, fatigue = 0.93 }, -- Forge-hardened constitution, but still needs sustenance
+    ["KulTiran"]            = { hunger = 1.03, thirst = 1.00, fatigue = 0.97 }, -- Seafaring resilience, but hard work takes its toll
+    ["Mechagnome"]          = { hunger = 0.75, thirst = 0.70, fatigue = 0.78 }, -- cybernetic body requires less sustenance but still gets worn down
 
+    -- Neutral
+    ["Pandaren"]            = { hunger = 0.93, thirst = 0.93, fatigue = 0.88 }, -- Zen discipline, love of food balanced by efficiency
+    ["Dracthyr"]            = { hunger = 0.85, thirst = 0.88, fatigue = 0.85 }, -- Draconic metabolism = efficient
+    ["EarthenDwarf"]        = { hunger = 0.72, thirst = 0.68, fatigue = 0.75 }, -- Living stone: tiny reserves but slow drain
+    ["Haranir"]             = { hunger = 1.05, thirst = 1.15, fatigue = 1.05 }, -- Forest spirits: hunger and thirst decay faster due to their active nature, but fatigue is moderate
+}
+-- ── Race max values (point pools) ─────────────────────────────────────────────
+-- Defines how large each need's pool is per race. Larger pools mean the need takes longer to deplete in absolute game time
+-- Human = 100/100/100 is the baseline. All other values are relative to that.
+ICN2.RACE_MAX_VALUES = {
+    -- Horde
+    ["Orc"]                = { hunger = 108, thirst = 102, fatigue = 112 }, -- Strong constitution, excellent endurance
+    ["Scourge"]            = { hunger = 50,  thirst = 50,  fatigue = 140 }, -- Undead: minimal food/water, decay causes fatigue
+    ["Tauren"]             = { hunger = 125, thirst = 110, fatigue = 118 }, -- large body, great endurance
+    ["Troll"]              = { hunger = 102, thirst = 108, fatigue = 100 }, -- Regeneration balances tropical thirst
+    ["BloodElf"]           = { hunger = 92,  thirst = 95,  fatigue = 98  }, -- Refined but unremarkable needs 
+    ["Goblin"]             = { hunger = 82,  thirst = 82,  fatigue = 88  }, -- Hyperactive metabolism, small reserves
+    ["Nightborne"]         = { hunger = 85,  thirst = 85,  fatigue = 78  }, -- arcane realiance causes smaller pools
+    ["HighmountainTauren"] = { hunger = 120, thirst = 108, fatigue = 122 }, -- Mountain endurance, hearty appetite
+    ["MagharOrc"]          = { hunger = 112, thirst = 105, fatigue = 115 }, -- Draenor-hardened survivors
+    ["Vulpera"]            = { hunger = 85,  thirst = 75,  fatigue = 95  }, -- desert-adapted: small but efficient
+    ["ZandalariTroll"]     = { hunger = 105, thirst = 105, fatigue = 108 }, -- Proud empire builders, balanced
+    -- Alliance
+    ["Human"]              = { hunger = 100, thirst = 100, fatigue = 100 }, -- baseline
+    ["Dwarf"]              = { hunger = 110, thirst = 105, fatigue = 115 }, -- hearty constitution, but still gets tired from mining and drinking
+    ["NightElf"]           = { hunger = 95,  thirst = 95,  fatigue = 110 }, -- efficient metabolism, but need more rest
+    ["Gnome"]              = { hunger = 80,  thirst = 80,  fatigue = 85  }, -- small frame, small pools
+    ["Draenei"]            = { hunger = 105, thirst = 100, fatigue = 110 }, -- Light-sustained endurance
+    ["Worgen"]             = { hunger = 110, thirst = 100, fatigue = 105 }, -- Large appetite, decent reserves
+    ["VoidElf"]            = { hunger = 92,  thirst = 95,  fatigue = 100 }, -- Void-touched efficiency
+    ["LightforgedDraenei"] = { hunger = 95,  thirst = 92,  fatigue = 115 }, -- Light sustains them heavily
+    ["DarkIronDwarf"]      = { hunger = 108, thirst = 102, fatigue = 110 }, -- Forge-hardened constitution
+    ["KulTiran"]           = { hunger = 115, thirst = 105, fatigue = 108 }, -- Hearty sailors with reserves
+    ["Mechagnome"]         = { hunger = 65,  thirst = 60,  fatigue = 85  }, -- Cybernetic efficiency, tiny reserves
     -- Neutral/Other
-    ["Pandaren"]       = { hunger = 0.9,  thirst = 0.9,  fatigue = 0.85 },
-    ["Dracthyr"]       = { hunger = 0.8,  thirst = 0.85, fatigue = 0.8  },
-    ["EarthenDwarf"]   = { hunger = 0.65, thirst = 0.6,  fatigue = 0.7  },  -- stone body
-
+    ["Pandaren"]           = { hunger = 105, thirst = 100, fatigue = 105 }, -- Zen discipline, love of food balanced by efficiency
+    ["Dracthyr"]           = { hunger = 98,  thirst = 95,  fatigue = 100 }, -- Draconic metabolism = efficient
+    ["EarthenDwarf"]       = { hunger = 75,  thirst = 70,  fatigue = 90  }, -- Living stone: tiny reserves but slow drain
+    ["Haranir"]            = { hunger = 95,  thirst = 95,  fatigue = 110 }, -- Forest spirits: moderate pools, but need more rest
 }
 
 -- ── Class modifiers ───────────────────────────────────────────────────────────
@@ -173,41 +207,6 @@ ICN2.THRESHOLDS = {
     ok       = 100,
 }
 
--- ── Race max values (point pools) ─────────────────────────────────────────────
--- Defines how large each need's pool is per race. Larger pools mean the need
--- takes longer to deplete in absolute game time — a Tauren stays fed longer
--- than a Gnome even at the same %/s decay rate.
--- Human = 100/100/100 is the baseline. All other values are relative to that.
-ICN2.RACE_MAX_VALUES = {
-    -- Horde
-    ["Orc"]                = { hunger = 110, thirst = 100, fatigue = 110 },
-    ["Scourge"]            = { hunger =  80, thirst =  70, fatigue = 120 },  -- undead: minimal food/water needs
-    ["Tauren"]             = { hunger = 130, thirst = 110, fatigue = 120 },  -- large body, great endurance
-    ["Troll"]              = { hunger = 105, thirst = 110, fatigue = 100 },
-    ["BloodElf"]           = { hunger =  90, thirst =  95, fatigue =  95 },
-    ["Goblin"]             = { hunger =  85, thirst =  85, fatigue =  85 },
-    ["Nightborne"]         = { hunger =  80, thirst =  80, fatigue =  70 },  -- sustained by arcane
-    ["HighmountainTauren"] = { hunger = 125, thirst = 110, fatigue = 125 },
-    ["MagharOrc"]          = { hunger = 115, thirst = 105, fatigue = 115 },
-    ["Vulpera"]            = { hunger =  80, thirst =  70, fatigue =  90 },  -- desert-adapted: small but efficient
-    ["ZandalariTroll"]     = { hunger = 110, thirst = 105, fatigue = 105 },
-    -- Alliance
-    ["Human"]              = { hunger = 100, thirst = 100, fatigue = 100 },  -- baseline
-    ["Dwarf"]              = { hunger = 115, thirst = 105, fatigue = 110 },
-    ["NightElf"]           = { hunger =  90, thirst =  95, fatigue = 105 },
-    ["Gnome"]              = { hunger =  75, thirst =  75, fatigue =  75 },  -- small frame, small pools
-    ["Draenei"]            = { hunger =  95, thirst =  90, fatigue = 105 },
-    ["Worgen"]             = { hunger = 115, thirst = 100, fatigue = 100 },
-    ["VoidElf"]            = { hunger =  85, thirst =  90, fatigue =  95 },
-    ["LightforgedDraenei"] = { hunger =  90, thirst =  85, fatigue = 110 },
-    ["DarkIronDwarf"]      = { hunger = 110, thirst = 100, fatigue = 105 },
-    ["KulTiran"]           = { hunger = 120, thirst = 105, fatigue = 110 },
-    ["Mechagnome"]         = { hunger =  60, thirst =  50, fatigue =  80 },  -- cybernetic body
-    -- Neutral/Other
-    ["Pandaren"]           = { hunger = 110, thirst = 100, fatigue = 100 },
-    ["Dracthyr"]           = { hunger =  95, thirst =  90, fatigue =  95 },
-    ["EarthenDwarf"]       = { hunger =  70, thirst =  60, fatigue =  85 },  -- stone body
-}
 
 -- ── Need helpers ──────────────────────────────────────────────────────────────
 -- Returns the max point value for a need given the player's race.
