@@ -122,7 +122,7 @@ ICN2.RACE_MODIFIERS = {
     ["Pandaren"]            = { hunger = 0.93, thirst = 0.93, fatigue = 0.88 }, -- Zen discipline, love of food balanced by efficiency
     ["Dracthyr"]            = { hunger = 0.85, thirst = 0.88, fatigue = 0.85 }, -- Draconic metabolism = efficient
     ["EarthenDwarf"]        = { hunger = 0.72, thirst = 0.68, fatigue = 0.75 }, -- Living stone: tiny reserves but slow drain
-    ["Haranir"]             = { hunger = 1.05, thirst = 1.15, fatigue = 1.05 }, -- Forest spirits: hunger and thirst decay faster due to their active nature, but fatigue is moderate
+    ["Harronir"]             = { hunger = 1.05, thirst = 1.15, fatigue = 1.05 }, -- Forest spirits: hunger and thirst decay faster due to their active nature, but fatigue is moderate
 }
 -- ── Race max values (point pools) ─────────────────────────────────────────────
 -- Defines how large each need's pool is per race. Larger pools mean the need takes longer to deplete in absolute game time
@@ -156,7 +156,7 @@ ICN2.RACE_MAX_VALUES = {
     ["Pandaren"]           = { hunger = 105, thirst = 100, fatigue = 105 }, -- Zen discipline, love of food balanced by efficiency
     ["Dracthyr"]           = { hunger = 98,  thirst = 95,  fatigue = 100 }, -- Draconic metabolism = efficient
     ["EarthenDwarf"]       = { hunger = 75,  thirst = 70,  fatigue = 90  }, -- Living stone: tiny reserves but slow drain
-    ["Haranir"]            = { hunger = 95,  thirst = 95,  fatigue = 110 }, -- Forest spirits: moderate pools, but need more rest
+    ["Harronir"]            = { hunger = 95,  thirst = 95,  fatigue = 110 }, -- Forest spirits: moderate pools, but need more rest
 }
 
 -- ── Class modifiers ───────────────────────────────────────────────────────────
@@ -207,12 +207,11 @@ ICN2.THRESHOLDS = {
     ok       = 100,
 }
 
-
 -- ── Need helpers ──────────────────────────────────────────────────────────────
 -- Returns the max point value for a need given the player's race.
 -- Falls back to 100 for any race not in RACE_MAX_VALUES.
 function ICN2:GetMaxValue(need)
-    local race = select(2, UnitRace and UnitRace("player") or "Human", "")
+    local race = select(2, UnitRace("player"))
     local raceMax = ICN2.RACE_MAX_VALUES[race]
     if raceMax and raceMax[need] then return raceMax[need] end
     return 100
@@ -305,9 +304,10 @@ ICN2.ARMOR_FATIGUE = {
 -- These values are intentionally modest — fatigue is meant to be the
 -- hardest need to recover, requiring deliberate downtime and helps with
 -- taking IRL rest time on longer play sessions.
+-- Values are in FIXED POINTS per second (not percentages).
 ICN2.FATIGUE_RECOVERY = {
-    slow = 100 / 600,   -- 0.333% per second → full bar in ~10 minutes
-    fast = 100 / 300,   -- 0.833% per second → full bar in ~5 minutes
+    slow = 100 / 600,   -- ~0.167 pts/s → 100 points in ~10 minutes
+    fast = 100 / 300,   -- ~0.333 pts/s → 100 points in ~5 minutes
 }
 
 -- ── Aura patterns for campfire / cozy fire detection ─────────────────────────

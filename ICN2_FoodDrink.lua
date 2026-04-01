@@ -34,10 +34,11 @@ ICN2 = ICN2 or {}
 
 -- ── Constants ─────────────────────────────────────────────────────────────────
 -- Tier data defines the recovery rates and completion bonuses for each food/drink tier
+-- All values are in FIXED POINTS (not percentages), same for all races
 local TIER_DATA = {
-    simple  = { trickle = 30.0, bonus = 10.0 },  -- Basic food/drink: 30% over duration + 10% bonus
-    complex = { trickle = 40.0, bonus = 15.0 },  -- Well-fed granting items: 40% over duration + 15% bonus
-    feast   = { trickle = 60.0, bonus = 20.0 },  -- Feast items: 60% over duration + 20% bonus (both needs)
+    simple  = { trickle = 30.0, bonus = 10.0 },  -- Basic food/drink: 30 points over duration + 10 point bonus
+    complex = { trickle = 40.0, bonus = 15.0 },  -- Well-fed granting items: 40 points over duration + 15 point bonus
+    feast   = { trickle = 60.0, bonus = 20.0 },  -- Feast items: 60 points over duration + 20 point bonus (both needs)
 }
 
 local WELLFED_PAUSE_SECS = 300  -- 5 minutes of hunger decay pause from well-fed buff
@@ -91,6 +92,7 @@ end
 -- ── Tier detection ────────────────────────────────────────────────────────────
 -- Determines the tier of food/drink by scanning player bags for the item
 -- and checking its tooltip for "Well Fed" secondary effects.
+-- Uses numeric item class IDs for locale-independent, reliable filtering.
 -- @param isFeast: If true, returns "feast" tier immediately
 -- @return: "feast", "complex", or "simple"
 local function detectTierFromBags(isFeast)
@@ -101,19 +103,19 @@ local function detectTierFromBags(isFeast)
         local numSlots = C_Container.GetContainerNumSlots(bag)
         if numSlots and numSlots > 0 then
             for slot = 1, numSlots do
-                local itemLink = C_Container.GetContainerItemLink(bag, slot)
-                -- Skip non-item links (battle pets, spells, currency, etc.)
-                if itemLink and itemLink:find("|Hitem:", 1, true) then
-                    -- Extract item ID from the item link
-                    local itemID = C_Item.GetItemIDByGUID and
-                        select(1, strsplit(":", itemLink:match("|Hitem:([%d:]+)|"))) or nil
-                    if not itemID then
-                        -- Fallback: parse item ID directly from link
-                        itemID = tonumber(itemLink:match("|Hitem:(%d+):"))
-                    end
-                    if itemID then
+                local itemID = C_Container.GetContainerItemID(bag, slot)
+                
+                if itemID then
+                    -- GetItemInfo returns item metadata including class/subclass IDs
+                    -- classID 0 = Consumable, subClassID 5 = Food & Drink
+                    -- This is locale-independent and handles all consumable types correctly
+                    local _, _, _, _, _, _, _, classID, subClassID = GetItemInfo(itemID)
+                    
+                    -- Filter: only process actual food/drink items
+                    -- Consumable (classID = 0), Food & Drink subclass (subClassID = 5)
+                    if classID == 0 and subClassID == 5 then
                         -- Use modern tooltip API to check for "Well Fed" in item tooltip
-                        local tooltipData = C_TooltipInfo and C_TooltipInfo.GetItemByID(tonumber(itemID))
+                        local tooltipData = C_TooltipInfo and C_TooltipInfo.GetItemByID(itemID)
                         if tooltipData and tooltipData.lines then
                             for _, line in ipairs(tooltipData.lines) do
                                 local text = line.leftText or ""
@@ -123,11 +125,14 @@ local function detectTierFromBags(isFeast)
                             end
                         else
                             -- Fallback for older API: check spell description
-                            local _, spellID = GetItemSpell(itemLink)
-                            if spellID then
-                                local desc = GetSpellDescription and GetSpellDescription(spellID) or ""
-                                if desc:lower():find("well fed", 1, true) then
-                                    return "complex"
+                            local itemLink = C_Container.GetContainerItemLink(bag, slot)
+                            if itemLink then
+                                local _, spellID = GetItemSpell(itemLink)
+                                if spellID then
+                                    local desc = GetSpellDescription and GetSpellDescription(spellID) or ""
+                                    if desc:lower():find("well fed", 1, true) then
+                                        return "complex"
+                                    end
                                 end
                             end
                         end
@@ -158,24 +163,25 @@ end
 -- ── Apply completion bonus ─────────────────────────────
 -- Applies the completion bonus when food/drink consumption finishes naturally.
 -- Only applies if the session completed naturally (not interrupted).
+-- Bonus is in FIXED POINTS, same for all races.
 -- @param state: The foodState or drinkState table
 -- @param need: "hunger" or "thirst"
 -- @param natural: true if completed naturally, false if interrupted
-local function applyBonus(state, need, natural) -- On natural completion we add a lump-sum bonus. Interrupted sessions get nothing.
+local function applyBonus(state, need, natural)
     if not state.tier or not natural then return end
 
     local data   = TIER_DATA[state.tier] or TIER_DATA.simple
-    local bonus  = data.bonus
+    local bonus  = data.bonus  -- This is now in fixed points, not percentage
     local isFeast = state.tier == "feast"
 
     if need == "hunger" or isFeast then
         local maxH = ICN2:GetMaxValue("hunger")
-        ICN2DB.hunger = math.min(maxH, ICN2DB.hunger + (bonus / 100 * maxH))
+        ICN2DB.hunger = math.min(maxH, ICN2DB.hunger + bonus)  -- Add fixed points
         ICN2:TriggerEmote("satisfied", "hunger")
     end
     if need == "thirst" or isFeast then
         local maxT = ICN2:GetMaxValue("thirst")
-        ICN2DB.thirst = math.min(maxT, ICN2DB.thirst + (bonus / 100 * maxT))
+        ICN2DB.thirst = math.min(maxT, ICN2DB.thirst + bonus)  -- Add fixed points
         ICN2:TriggerEmote("satisfied", "thirst")
     end
 
@@ -183,7 +189,7 @@ local function applyBonus(state, need, natural) -- On natural completion we add 
 
     local needStr = (need == "hunger") and "|cFF00FF00Hunger|r" or "|cFF4499FFThirst|r"
     if isFeast then needStr = "|cFF00FF00Hunger|r & |cFF4499FFThirst|r" end
-    print(string.format("|cFFFF6600ICN2|r %s completion bonus! (+%.0f%% — %s tier)",
+    print(string.format("|cFFFF6600ICN2|r %s completion bonus! (+%.0f pts — %s tier)",
         needStr, bonus, state.tier))
 end
 

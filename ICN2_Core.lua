@@ -351,7 +351,9 @@ function ICN2:_ApplyArmorModifier(rates) -- Scales fatigue decay by armor type. 
 end
 
 -- ── 7. Food / drink recovery ──────────────────────────────────────────────────
--- Adds a positive trickle to hunger/thirst while the eating/drinking buff is active. The trickle is spread evenly over the buff duration.
+-- Adds a positive trickle to hunger/thirst while the eating/drinking buff is active.
+-- Trickle values are in FIXED POINTS (not percentages), spread evenly over buff duration.
+-- This means all races recover the same absolute points, but different percentages of their bar.
 local FOOD_TRICKLE = { simple = 30.0, complex = 40.0, feast = 60.0 }
 
 function ICN2:_ApplyFoodDrinkRecovery(rates)
@@ -359,29 +361,27 @@ function ICN2:_ApplyFoodDrinkRecovery(rates)
         local duration = ICN2:GetFoodDuration() or 30
         local tier     = ICN2:GetFoodTier()
         local trickle  = FOOD_TRICKLE[tier] or FOOD_TRICKLE.simple
-        local maxH     = ICN2:GetMaxValue("hunger")
-        local perSec   = (trickle / math.max(1, duration)) * (maxH / 100)
+        local perSec   = trickle / math.max(1, duration)  -- Fixed points per second
         rates.hunger   = rates.hunger + perSec
         if tier == "feast" then
-            local maxT = ICN2:GetMaxValue("thirst")
-            rates.thirst = rates.thirst + (trickle / math.max(1, duration)) * (maxT / 100)
+            rates.thirst = rates.thirst + perSec  -- Feast recovers both at same rate
         end
     end
     if ICN2:IsDrinking() then
         local duration = ICN2:GetDrinkDuration() or 30
         local tier     = ICN2:GetDrinkTier()
         local trickle  = FOOD_TRICKLE[tier] or FOOD_TRICKLE.simple
-        local maxT     = ICN2:GetMaxValue("thirst")
-        rates.thirst   = rates.thirst + (trickle / math.max(1, duration)) * (maxT / 100)
+        rates.thirst   = rates.thirst + (trickle / math.max(1, duration))  -- Fixed points per second
     end
 end
 
 -- ── 8. Fatigue recovery ───────────────────────────────────────────────────────
 -- Tiers:
---   fast → IsResting() AND (nearCampfire OR inHousing)   — ~2 min to full
---   slow → any single condition                           — ~5 min to full
+--   fast → IsResting() AND (nearCampfire OR inHousing)   — ~5 min for 100 points
+--   slow → any single condition                           — ~10 min for 100 points
 --   none → no qualifying condition, or in combat
-function ICN2:_ApplyFatigueRecovery(rates) -- checks for qualifying conditions and applies the appropriate fatigue recovery; also sets _fatigueRecoveryTier and _fatigueRecoverySrc for PrintDetails
+-- Recovery values are in FIXED POINTS per second (not percentages).
+function ICN2:_ApplyFatigueRecovery(rates)
     local st = ICN2.State
 
     if st.inCombat then
@@ -394,9 +394,8 @@ function ICN2:_ApplyFatigueRecovery(rates) -- checks for qualifying conditions a
     local src        = {}
     local gain       = 0
     local tier       = "none"
-    local maxF       = ICN2:GetMaxValue("fatigue")
-    local recFast    = ICN2.FATIGUE_RECOVERY.fast * (maxF / 100)
-    local recSlow    = ICN2.FATIGUE_RECOVERY.slow * (maxF / 100)
+    local recFast    = ICN2.FATIGUE_RECOVERY.fast  -- Fixed points/sec
+    local recSlow    = ICN2.FATIGUE_RECOVERY.slow  -- Fixed points/sec
 
     if st.isResting and (st.nearCampfire or st.inHousing) then
         gain = recFast
@@ -477,24 +476,24 @@ local function tick()
     ICN2:CheckEmotes(oldH, oldT, oldF)  -- emotes receive percentages
 end
 
--- Manual recovery — amount is in PERCENTAGE (0–100), converted to pts internally.
+-- Manual recovery — amount is in FIXED POINTS (not percentage), same for all races.
 function ICN2:Eat(amount)
     local maxH = ICN2:GetMaxValue("hunger")
-    ICN2DB.hunger = clamp(ICN2DB.hunger + ((amount or 30) / 100 * maxH), maxH)
+    ICN2DB.hunger = clamp(ICN2DB.hunger + (amount or 50), maxH)  -- Default 50 points
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "hunger")
 end
 
 function ICN2:Drink(amount)
     local maxT = ICN2:GetMaxValue("thirst")
-    ICN2DB.thirst = clamp(ICN2DB.thirst + ((amount or 30) / 100 * maxT), maxT)
+    ICN2DB.thirst = clamp(ICN2DB.thirst + (amount or 50), maxT)  -- Default 50 points
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "thirst")
 end
 
 function ICN2:Rest(amount)
     local maxF = ICN2:GetMaxValue("fatigue")
-    ICN2DB.fatigue = clamp(ICN2DB.fatigue + ((amount or 20) / 100 * maxF), maxF)
+    ICN2DB.fatigue = clamp(ICN2DB.fatigue + (amount or 40), maxF)  -- Default 40 points
     self:UpdateHUD()
     self:TriggerEmote("satisfied", "fatigue")
 end
@@ -644,7 +643,7 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
     local maxF       = ICN2:GetMaxValue("fatigue")
     local fatigueGain = ((ICN2._fatigueRecoveryTier == "fast" and ICN2.FATIGUE_RECOVERY.fast)
                       or (ICN2._fatigueRecoveryTier == "slow" and ICN2.FATIGUE_RECOVERY.slow)
-                      or 0) * (maxF / 100)
+                      or 0)  -- Already in points/sec, no scaling needed
 
     local P   = "|cFFFF6600ICN2|r"
     local sep = "|cFF555555--------------------------------|r"
