@@ -13,3 +13,10 @@
 - Add ICN2_Localization.lua (English + ptBR), laying the ground for future languages support.
 - Also fix race name typo (Harronir) and simplify race lookup in GetMaxValue.
 - TOC update to 1.8.0.
+
+# v1.8.1
+## Track Well Fed eligibility to prevent reapply
+- Add a wellFedEligible saved flag and eating-linked eligibility logic to prevent the Well Fed hunger-pause from reapplying across UI reloads/portals.
+- ICN2_Data.lua: introduce defaults.wellFedEligible. ICN2_FoodDrink.lua: document the rework, persist wellFedEligible in ICN2DB, set it true when eating starts, and consume it when the Well Fed pause is applied (checked alongside auraInstanceID).
+- Also minor comment and formatting tweaks.
+- TOC update to 1.8.1.

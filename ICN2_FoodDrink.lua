@@ -22,12 +22,21 @@
 -- The per-second trickle is applied in Core's _ApplyFoodDrinkRecovery.
 -- The completion bonus is a lump-sum applied here on natural expiry.
 --
--- Well Fed rework
+-- Well Fed rework (v1.8.1 — Eating-Linked Eligibility)
 -- ──────────────────────────────────────────────────────────────
 -- Well Fed no longer restores hunger/thirst directly.
 -- When the aura applies, it pauses hunger decay for 5 minutes
 -- by setting ICN2._wellFedPauseExpiry, read by Core's
 -- _ApplyWellFedPause modifier.
+--
+-- FIX: To prevent the pause from re-applying on /reload or portal,
+-- the addon now tracks a `wellFedEligible` flag that is:
+--   • Set to TRUE when the player starts eating
+--   • Set to FALSE when Well Fed pause is applied
+--   • Checked before applying the pause (alongside auraInstanceID)
+--
+-- This ensures the pause only triggers once per eating session,
+-- even if the UI reloads while the Well Fed buff is active.
 -- ============================================================
 
 ICN2 = ICN2 or {}
@@ -50,6 +59,9 @@ ICN2._wellFedPauseExpiry = 0    -- GetTime() timestamp when well-fed pause expir
 -- Tracks current food and drink consumption states
 local foodState  = { active = false, startTime = nil, duration = nil, tier = nil }
 local drinkState = { active = false, startTime = nil, duration = nil, tier = nil }
+
+-- NOTE: wellFedEligible is stored in ICN2DB.wellFedEligible (saved variable)
+-- to persist across UI reloads. Initialized in ICN2_Core.lua's initDB().
 
 -- ── Aura name patterns ────────────────────────────────────────────────────────
 -- Patterns used to identify different types of food/drink auras by name
@@ -160,7 +172,7 @@ local function detectDrinkTier()
     return detectTierFromBags(false)
 end
 
--- ── Apply completion bonus ─────────────────────────────
+-- ── Apply completion bonus ─────────────────────────────────
 -- Applies the completion bonus when food/drink consumption finishes naturally.
 -- Only applies if the session completed naturally (not interrupted).
 -- Bonus is in FIXED POINTS, same for all races.
@@ -210,6 +222,7 @@ function ICN2:OnUnitAura()
             foodState.startTime = now
             foodState.duration  = foodAura.duration or 30
             foodState.tier      = detectFoodTier(foodAura)
+            ICN2DB.wellFedEligible = true  -- Reset eligibility when eating starts
         end
     else
         if foodState.active then
@@ -220,16 +233,23 @@ function ICN2:OnUnitAura()
             foodState.startTime = nil
             foodState.duration  = nil
             foodState.tier      = nil
+            -- NOTE: wellFedEligible is NOT cleared here—let Well Fed consume it
         end
     end
 
-    -- ── Well Fed aura handling ────────────────────────────────────────────────
+    -- ── Well Fed aura handling (with eating-linked eligibility) ───────────────
     local wellFedAura = findAura(WELLFED_PATTERNS)
     if wellFedAura then
         local id = wellFedAura.auraInstanceID or 0
-        if id ~= ICN2._lastWellFedInstanceID then
+        
+        -- Only apply pause if:
+        -- 1. This is a NEW Well Fed instance (auraInstanceID changed)
+        -- 2. Player recently started eating (wellFedEligible is true)
+        if id ~= ICN2._lastWellFedInstanceID and ICN2DB.wellFedEligible then
             ICN2._lastWellFedInstanceID = id
             ICN2._wellFedPauseExpiry    = now + WELLFED_PAUSE_SECS
+            ICN2DB.wellFedEligible      = false  -- Consume eligibility
+            
             print(string.format(
                 "|cFFFF6600ICN2|r |cFF00FF00Well Fed!|r Hunger decay paused for %d min.",
                 math.floor(WELLFED_PAUSE_SECS / 60)))
