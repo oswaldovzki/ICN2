@@ -11,6 +11,7 @@ ICN2.DEFAULTS = {
     thirst  = 100.0,
     fatigue = 100.0,
     lastLogout = nil,  -- timestamp via time()
+    wellFedEligible = true,  -- v1.8.1: eligibility flag for Well Fed hunger pause
 
     settings = {
         -- "fast" | "medium" | "slow" | "realistic" | "custom"
