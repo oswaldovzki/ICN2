@@ -1,48 +1,7 @@
 -- ============================================================
--- ICN2_HUD.lua  (v1.7.0)
+-- ICN2_HUD.lua
 -- On-screen HUD: hunger, thirst, fatigue.
--- Draggable, scalable, fully theme-driven.
---
--- ── Architecture ─────────────────────────────────────────────
---
--- Frame structure is built ONCE in BuildHUD() and never rebuilt.
--- Themes are pure data — ApplyHUDTheme() walks named texture
--- slots and assigns textures/colors. No rebuild on theme change.
---
--- ── Named slot inventory ─────────────────────────────────────
---
--- chrome{}          — nine-slice frame border + background
---   .cornerTL/TR/BL/BR  Texture   fixed-size corner pieces
---   .edgeTop/Bottom      Texture   top/bottom horizontal edges
---   .edgeLeft/Right      Texture   left/right vertical edges
---   .bgCenter            Texture   main interior background
---   .titleStrip          Texture   decorative strip at top
---
--- bars[key]{}       — one per need (hunger / thirst / fatigue)
---   .rowFrame        Frame         contains icon + barFrame + glyph
---   .icon            Texture       need icon
---   .barFrame        Frame         sized by hudBarScale
---   .barBG           Texture       bar track background  (slot)
---   .barFill         StatusBar     animated fill         (slot)
---   .barOverlay      Texture       above-fill decoration (slot)
---   .barLabelLeft    FontString    left label (percentage or number)
---   .barLabelRight   FontString    right label (percentage or number)
---   .glyphText       FontString    > >> <<< etc.
---   .setPulse(bool)  function      starts/stops glyph pulse
---
--- ── Theme descriptor fields ───────────────────────────────────
--- chrome.cornerTL/TR/BL/BR   string|nil  atlas name
--- chrome.edgeTop/Bottom      string|nil
--- chrome.edgeLeft/Right      string|nil
--- chrome.bgCenter            string|{r,g,b,a}  atlas or solid color
--- chrome.titleStrip          string|nil
--- chrome.cornerSize          number   (default 8)
--- chrome.edgeThickness       number   (default 4)
--- bar.bg                     {r,g,b,a}
--- bar.fill                   string   StatusBar texture path
--- bar.overlay                string|nil  atlas drawn above fill
--- barColors                  {hunger,thirst,fatigue}={r,g,b} or nil
--- mode                       "smooth" | "blocky"
+-- Draggable, scalable.
 -- ============================================================
 
 ICN2 = ICN2 or {}
@@ -83,7 +42,8 @@ local BLOCK_COLORS = {
 local DEFAULT_FILL_TEX = "Interface\\TargetingFrame\\UI-StatusBar"
 
 -- ═══ SECTION 1 — Theme descriptors ═════════════════════════════════════════════
-
+-- This is a Work In Progress for future implementation.
+-- Only the "smooth" theme is fully supported at the moment; the others are placeholders for testing new textures and ideas.
 ICN2.HUD_THEMES = {
 
     smooth = {
@@ -224,11 +184,10 @@ local function getTheme()
 end
 
 -- ══ SECTION 2 — Indicator logic ════════════════════════════════════════════════
-
-local IND_FASTER_UP   =  0.30
-local IND_FAST_UP     =  0.10
-local IND_FAST_DOWN   = -0.10
-local IND_FASTER_DOWN = -0.30
+local IND_FASTER_UP   =  0.50
+local IND_FAST_UP     =  0.30
+local IND_FAST_DOWN   = -0.30
+local IND_FASTER_DOWN = -0.50
 local STABLE_EPSILON  =  0.002
 
 local PULSE_PERIOD = 2.0
@@ -258,15 +217,8 @@ local function getIndicator(rate)
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- SECTION 3 — Texture slot helper
--- Handles three value types from a theme descriptor:
---   string       → SetAtlas (atlas name)
---   {r,g,b,a}    → SetColorTexture (solid color)
---   nil          → Hide
--- ═══════════════════════════════════════════════════════════════════════════════
-
-local function applyTexSlot(tex, value) -- string|{r,g,b,a}|nil
+-- ══ SECTION 3 — Texture slot helper ════════════════════════════════════════════
+local function applyTexSlot(tex, value) -- value can be nil (hide), string (SetAtlas) or table (SetColorTexture); tex can be nil (no-op)
     if not tex then return end
     if value == nil then
         tex:Hide()
@@ -280,7 +232,6 @@ local function applyTexSlot(tex, value) -- string|{r,g,b,a}|nil
 end
 
 -- ══  SECTION 4 — Build HUD  ════════════════════════════════════════════════════
-
 function ICN2:BuildHUD() -- called once on demand when HUD is first shown; builds entire frame hierarchy and saves references in module state
     local s        = ICN2DB.settings
     local barScale = s.hudBarScale or 1.0
@@ -557,7 +508,6 @@ function ICN2:BuildHUD() -- called once on demand when HUD is first shown; build
 end
 
 -- ═══ SECTION 5 — Theme application ══════════════════════════════════════════
-
 function ICN2:ApplyHUDTheme(themeId) -- walks theme descriptor and applies textures/colors to named slots; called on theme change and on initial build
     if not hudFrame then return end
 
@@ -618,7 +568,6 @@ function ICN2:ApplyHUDTheme(themeId) -- walks theme descriptor and applies textu
 end
 
 -- ── Public entry points ────────────────────────────────────────────────────────
-
 function ICN2:SetBarTheme(themeId)
     ICN2:ApplyHUDTheme(themeId)
     ICN2:UpdateHUD()

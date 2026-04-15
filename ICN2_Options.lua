@@ -15,7 +15,7 @@ local presetBtns = {}
 local decaySliders = {}
 
 -- ── Utility: create a simple label ───────────────────────────────────────────
-local function makeLabel(parent, text, x, y, r, g, b)
+local function makeLabel(parent, text, x, y, r, g, b) -- color optional (default white)
     local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     fs:SetText(text)
@@ -24,7 +24,7 @@ local function makeLabel(parent, text, x, y, r, g, b)
 end
 
 -- ── Utility: create a checkbox ───────────────────────────────────────────────
-local function makeCheckbox(parent, label, x, y, getter, setter)
+local function makeCheckbox(parent, label, x, y, getter, setter) -- getter/setter for boolean value
     local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     cb:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     cb:SetSize(24, 24)
@@ -37,7 +37,7 @@ local function makeCheckbox(parent, label, x, y, getter, setter)
 end
 
 -- ── Utility: create a simple slider (float) ──────────────────────────────────
-local function makeSlider(parent, labelText, x, y, minVal, maxVal, step, getter, setter)
+local function makeSlider(parent, labelText, x, y, minVal, maxVal, step, getter, setter) -- getter/setter for numeric value
     local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
     slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     slider:SetWidth(180)
@@ -67,7 +67,7 @@ local function roundBias(n)
     return math.floor((tonumber(n) or 0) + 0.5)
 end
 
-local function getBiasForUI(needKey)
+local function getBiasForUI(needKey) -- Converts from internal multiplier to slider position, applying preset if needed.
     local s = ICN2DB.settings
     if s.preset == "custom" then
         local v = s.customDecayBias and s.customDecayBias[needKey]
@@ -78,7 +78,7 @@ local function getBiasForUI(needKey)
     return roundBias(ICN2:PresetMultiplierToBiasDisplay(m))
 end
 
-local function refreshDecaySliders()
+local function refreshDecaySliders() -- Updates slider positions and labels based on current settings. Called when opening the tab and when changing presets.
     local s = ICN2DB.settings
     local isCustom = (s.preset == "custom")
     local presetGlobal = ICN2.PRESETS[s.preset] or 1.0
@@ -103,7 +103,7 @@ local function refreshDecaySliders()
     end
 end
 
-local function makeDecayBiasSlider(parent, needKey, needLabel, x, y)
+local function makeDecayBiasSlider(parent, needKey, needLabel, x, y) -- Creates a slider for adjusting decay bias for a specific need. The slider is read-only unless the "Custom" preset is selected.
     local maxM = ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30
     local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
     slider:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -159,7 +159,7 @@ local function selectOptionsTab(which)
     end
 end
 
-local function makeTabButton(parent, text, x, y, onClick)
+local function makeTabButton(parent, text, x, y, onClick) -- Utility: creates a button to switch between options tabs. onClick should call selectOptionsTab with the appropriate tab number.
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(130, 26)
     b:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -169,7 +169,7 @@ local function makeTabButton(parent, text, x, y, onClick)
 end
 
 -- ── Build options panel ───────────────────────────────────────────────────────
-function ICN2:BuildOptions()
+function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the options UI. The frame is hidden by default and shown when the user clicks "Options" in the slash command or via Interface Options.
     decaySliders = {}
     presetBtns = {}
 

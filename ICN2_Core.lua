@@ -1,6 +1,8 @@
+
 -- ══ Core engine ════════════════════════════════════════
 -- This module handles the core simulation logic: tracking need values, detecting conditions, calculating rates, and applying ticks.
 -- It is the backbone of the addon and is designed to be as self-contained and decoupled from WoW APIs as possible, to facilitate testing and future expansion.
+
 -- Pipeline
 --   Game World
 --     ↓
@@ -224,6 +226,13 @@ function ICN2:_ApplySituationModifiers(rates) -- scales the current rates by sit
     local sm = ICN2.SITUATION_MODIFIERS
     local st = ICN2.State
 
+    if st.inInstance then
+        rates.hunger  = rates.hunger  * (sm.instance.hunger  or 1.0)
+        rates.thirst  = rates.thirst  * (sm.instance.thirst  or 1.0)
+        rates.fatigue = rates.fatigue * (sm.instance.fatigue or 1.0)
+        return  -- Instance mode overrides all other situational modifiers
+    end
+
     if st.isResting then
         rates.hunger  = rates.hunger  * sm.resting.hunger
         rates.thirst  = rates.thirst  * sm.resting.thirst
@@ -427,17 +436,29 @@ local function clamp(v, maxV) -- utility function to clamp a value between 0 and
 end
 
 local function tick() -- the main function that applies the current rates to the needs each tick; it gets the current rates, applies them to the needs, clamps the results, updates the HUD, and checks for any emotes that need to be triggered.
+
+local TICK_VARIANCE = 0.10  -- ±10% random variance on final tick application
+
+local function applyVariance(delta)
+    local multiplier = 1.0 + (math.random() * 2 - 1) * TICK_VARIANCE
+    return delta * multiplier
+end
+
     local oldH = ICN2:GetNeedPercent("hunger")
     local oldT = ICN2:GetNeedPercent("thirst")
     local oldF = ICN2:GetNeedPercent("fatigue")
 
     local rates = ICN2:GetCurrentRates()
+    
+    local hungerDelta  = applyVariance(rates.hunger)
+    local thirstDelta  = applyVariance(rates.thirst)
+    local fatigueDelta = applyVariance(rates.fatigue)
 
-    ICN2DB.hunger  = clamp(ICN2DB.hunger  + rates.hunger,  ICN2:GetMaxValue("hunger"))
-    ICN2DB.thirst  = clamp(ICN2DB.thirst  + rates.thirst,  ICN2:GetMaxValue("thirst"))
-    ICN2DB.fatigue = clamp(ICN2DB.fatigue + rates.fatigue, ICN2:GetMaxValue("fatigue"))
+    ICN2DB.hunger  = clamp(ICN2DB.hunger  + hungerDelta,  ICN2:GetMaxValue("hunger"))
+    ICN2DB.thirst  = clamp(ICN2DB.thirst  + thirstDelta,  ICN2:GetMaxValue("thirst"))
+    ICN2DB.fatigue = clamp(ICN2DB.fatigue + fatigueDelta, ICN2:GetMaxValue("fatigue"))
 
-    ICN2._lastRates = rates
+    ICN2._lastRates = rates  -- Store unmodified rates for /icn2 details display
 
     ICN2:UpdateHUD()
     ICN2:CheckEmotes(oldH, oldT, oldF)
@@ -549,6 +570,13 @@ local function getSituationLabels() -- generates a list of active situation labe
     local labels = {}
     local sm = ICN2.SITUATION_MODIFIERS
     local st = ICN2.State
+
+    -- Show instance status prominently if active
+    if st.inInstance then
+        table.insert(labels, string.format("|cFFFF9900Instance|r (H×%.2f T×%.2f F×%.2f) — aura scanning disabled",
+            sm.instance.hunger, sm.instance.thirst, sm.instance.fatigue))
+        return labels  -- Instance mode overrides all other situational displays
+    end
 
     if st.isResting then
         table.insert(labels, string.format("Resting (H×%.2f T×%.2f F×%.2f)",

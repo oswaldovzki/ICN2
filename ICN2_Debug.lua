@@ -1,42 +1,27 @@
 -- ============================================================
--- ICN2_Debug.lua  (v1.5.0)
+-- ICN2_Debug.lua
 -- Standalone debug overlay. NOT included in release builds.
---
 -- Usage: /icn2 debug
---
--- Opens a scrollable window showing a full JSON snapshot of
--- every modifier, state flag, rate component, and internal
--- value in the addon at the moment the command is run.
--- The snapshot is shown in a selectable edit box so it can be
--- copied without posting to chat.
---
--- Load order: last in ICN2.toc (after all other modules).
--- To enable:  add "ICN2_Debug.lua" to ICN2.toc
--- To disable: remove it — no other file depends on this one.
 -- ============================================================
 
 ICN2 = ICN2 or {}
 
 -- ── Layout ────────────────────────────────────────────────────────────────────
 -- Constants defining the debug window's appearance and layout
-local DEBUG_W    = 640  -- Window width
-local DEBUG_H    = 520  -- Window height
+local DEBUG_W    = 800  -- Window width
+local DEBUG_H    = 600  -- Window height
 local DEBUG_FONT = "Fonts\\FRIZQT__.TTF"  -- Font file path
-local DEBUG_SIZE = 11   -- Font size
+local DEBUG_SIZE = 12   -- Font size
 
--- Global reference to the debug frame (created lazily)
 local debugFrame = nil
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- SECTION 1 — Snapshot builder
 -- Collects every piece of observable state into a plain Lua table,
 -- then serializes it to a pretty-printed JSON-like string.
--- No game-state is modified here.
 -- ══════════════════════════════════════════════════════════════════════════════
 
 -- ── Armor tier from equipped chest ───────────────────────────────────────────
--- Determines the armor type worn by the player based on chest armor subtype.
--- Returns "PLATE", "MAIL", "LEATHER", "CLOTH", or appropriate fallback.
 local function getArmorTier()
     local itemLink = GetInventoryItemLink("player", 5)
     if not itemLink then return "none (no chest)" end
@@ -50,18 +35,15 @@ local function getArmorTier()
 end
 
 -- ── Stand state string ────────────────────────────────────────────────────────
--- Maps stand state IDs to human-readable names for display
 local STAND_NAMES = { [0]="standing", [1]="sitting", [2]="laying", [3]="kneeling" }
--- Returns the current stand state of the player as a string
-local function getStandState()
+local function getStandState() -- returns a human-readable string for the player's current stand state
     local v = GetUnitStandState and GetUnitStandState("player") or 0
     return STAND_NAMES[v] or ("unknown("..tostring(v)..")")
 end
 
 -- ── Resolve active situation modifiers ───────────────────────────────────────
--- Returns a table of currently active situation modifiers based on the player's state.
--- Situation modifiers are applied based on conditions like resting, mounted, flying, etc.
--- Resting is exclusive and overrides all other modifiers.
+-- Checks all situation flags in the current state and gathers their active modifiers.
+-- Resting is exclusive and takes priority over all others. Indoors only applies if
 local function getActiveSituations()
     local st  = ICN2.State or {}
     local sm  = ICN2.SITUATION_MODIFIERS or {}
@@ -69,7 +51,6 @@ local function getActiveSituations()
 
     if st.isResting then
         out.resting = sm.resting or {}
-        -- resting is exclusive — nothing else applies
         return out
     end
     if st.isMounted  then out.mounted  = sm.mounted  or {} end
@@ -102,7 +83,6 @@ local function getFoodDrinkState()
     local isEating   = ICN2.IsEating   and ICN2:IsEating()   or false
     local isDrinking = ICN2.IsDrinking and ICN2:IsDrinking() or false
 
-    -- Trickle rates per second for different food/drink tiers
     local foodTrickle, drinkTrickle = 0, 0
     local TRICKLE = { simple = 30.0, complex = 40.0, feast = 60.0 }
 
@@ -117,7 +97,6 @@ local function getFoodDrinkState()
         drinkTrickle = (TRICKLE[tier] or 30.0) / math.max(1, dur)
     end
 
-    -- Well-fed pause expiry and remaining time
     local wfExpiry    = ICN2._wellFedPauseExpiry or 0
     local wfRemaining = (wfExpiry > 0) and math.max(0, math.ceil(wfExpiry - GetTime())) or 0
 
@@ -200,15 +179,12 @@ end
 -- ── Rate calculation pipeline breakdown ──────────────────────────────────────
 -- Captures the rates table after each modifier step in GetCurrentRates().
 -- This shows exactly how each modifier layer affects the final net rates.
--- @return: Table with rates snapshot after each pipeline step
 local function getRatePipeline()
     if not ICN2.GetCurrentRates then return { error = "GetCurrentRates not available" } end
     
-    -- We'll intercept each step by calling the modifiers manually
     local pipeline = {}
     local rates = { hunger = 0, thirst = 0, fatigue = 0 }
     
-    -- Helper to deep copy rates for snapshot
     local function snapshot(label)
         pipeline[label] = {
             hunger  = rates.hunger,
@@ -272,8 +248,6 @@ end
 -- ── Depletion rate calculations ───────────────────────────────────────────────
 -- Calculates how long it will take to deplete needs under current conditions.
 -- All calculations use net rates (decay minus recovery) for accuracy.
--- @param rates: Current rates table from GetCurrentRates (pts/sec)
--- @return: Table with per-minute, per-hour rates and time-to-deplete estimates
 local function getDepletionRates(rates)
     local current = {
         hunger  = ICN2DB and ICN2DB.hunger  or 0,
@@ -287,10 +261,9 @@ local function getDepletionRates(rates)
         fatigue = ICN2.GetMaxValue and ICN2:GetMaxValue("fatigue") or 100,
     }
     
-    -- Helper: calculate time to deplete in minutes (returns nil for zero/positive rates)
     local function timeToDeplete(currentPts, rate)
-        if rate >= 0 then return nil end  -- Stable or recovering
-        return math.abs(currentPts / rate) / 60  -- Convert seconds to minutes
+        if rate >= 0 then return nil end
+        return math.abs(currentPts / rate) / 60
     end
     
     return {
@@ -380,16 +353,10 @@ end
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- SECTION 2 — Serializer
--- Converts the snapshot table to a pretty-printed JSON-like string.
--- Uses 2-space indentation. Handles booleans, numbers, strings, nil, and nested
--- tables. Functions and userdata are skipped. Arrays are detected and formatted
--- differently from objects.
+--  Converts the snapshot table into a JSON-like string for display. Handles
+--  pretty-printing with indentation and sorting for readability.
 -- ══════════════════════════════════════════════════════════════════════════════
 
--- Serializes a Lua value to a JSON-like string with proper indentation.
--- @param val: The value to serialize (table, string, number, boolean, nil)
--- @param indent: Current indentation level (number, defaults to 0)
--- @return: JSON-like string representation
 local function serialize(val, indent)
     indent = indent or 0
     local pad  = string.rep("  ", indent)
@@ -401,17 +368,14 @@ local function serialize(val, indent)
     elseif t == "boolean" then
         return tostring(val)
     elseif t == "number" then
-        -- Format floats to 6 decimal places, integers without decimals
         if val == math.floor(val) and math.abs(val) < 1e12 then
             return tostring(math.floor(val))
         else
             return string.format("%.6f", val)
         end
     elseif t == "string" then
-        -- Escape quotes and backslashes
         return '"' .. val:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n') .. '"'
     elseif t == "table" then
-        -- Detect array vs object: array = all keys are sequential integers from 1
         local isArray = true
         local n = 0
         for k, _ in pairs(val) do
@@ -421,17 +385,14 @@ local function serialize(val, indent)
             end
         end
         if isArray and n > 0 then
-            -- Sort array keys
             local arr = {}
             for i = 1, n do arr[i] = serialize(val[i], indent + 1) end
             if n <= 3 then
-                -- Short arrays on one line
                 return "[ " .. table.concat(arr, ", ") .. " ]"
             else
                 return "[\n" .. pad2 .. table.concat(arr, ",\n" .. pad2) .. "\n" .. pad .. "]"
             end
         else
-            -- Object
             local keys = {}
             for k, _ in pairs(val) do
                 if type(k) == "string" then keys[#keys + 1] = k end
@@ -448,7 +409,7 @@ local function serialize(val, indent)
             return "{\n" .. table.concat(lines, ",\n") .. "\n" .. pad .. "}"
         end
     else
-        return '"[' .. t .. ']"'  -- function, userdata, thread
+        return '"[' .. t .. ']"' 
     end
 end
 
@@ -457,9 +418,6 @@ end
 -- Creates and manages the debug window UI components including the frame,
 -- scrollable text area, and control buttons.
 -- ══════════════════════════════════════════════════════════════════════════════
-
--- Creates the debug window frame with all UI elements.
--- Returns the frame object with attached methods for updating content.
 local function buildDebugFrame()
     local f = CreateFrame("Frame", "ICN2DebugFrame", UIParent, "BasicFrameTemplateWithInset")
     f:SetSize(DEBUG_W, DEBUG_H)
@@ -473,7 +431,7 @@ local function buildDebugFrame()
     f:SetClampedToScreen(true)
     f:Hide()
 
-    f.TitleText:SetText("|cFFFF6600ICN2|r Debug Snapshot  |cFF888888v1.4.0|r")
+    f.TitleText:SetText("|cFFFF6600ICN2|r Debug Snapshot  |cFF888888v2.0.0|r")
 
     -- ── Scroll frame ──────────────────────────────────────────────────────────
     local scroll = CreateFrame("ScrollFrame", "ICN2DebugScroll", f, "UIPanelScrollFrameTemplate")
@@ -481,7 +439,7 @@ local function buildDebugFrame()
     scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 10)
 
     local content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(DEBUG_W - 50, 1)  -- height set dynamically below
+    content:SetSize(DEBUG_W - 50, 1)
     scroll:SetScrollChild(content)
 
     local text = CreateFrame("EditBox", nil, content)
@@ -494,7 +452,6 @@ local function buildDebugFrame()
     text:SetJustifyV("TOP")
     text:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    -- Calculates the height needed for the text content
     local function getTextHeight(json)
         local ok, h = pcall(text.GetStringHeight, text)
         if ok and type(h) == "number" and h > 0 then
@@ -506,7 +463,6 @@ local function buildDebugFrame()
         return (lines + 1) * lineHeight
     end
 
-    -- Sets the JSON text in the edit box and adjusts container heights
     local function setDebugText(json)
         text:SetText(json)
         local height = math.max(DEBUG_H - 50, getTextHeight(json) + 10)
@@ -517,8 +473,8 @@ local function buildDebugFrame()
 
     -- ── Refresh button ────────────────────────────────────────────────────────
     local refreshBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    refreshBtn:SetSize(80, 22)
-    refreshBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -28, -4)
+    refreshBtn:SetSize(80, 18)
+    refreshBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -26, -2)
     refreshBtn:SetText("Refresh")
     refreshBtn:SetScript("OnClick", function()
         local snapshot = buildSnapshot()
@@ -528,7 +484,7 @@ local function buildDebugFrame()
 
     -- ── Select-all button (for easy copy) ─────────────────────────────────────
     local selectBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
-    selectBtn:SetSize(90, 22)
+    selectBtn:SetSize(90, 18)
     selectBtn:SetPoint("TOPRIGHT", refreshBtn, "TOPLEFT", -4, 0)
     selectBtn:SetText("Select All")
     selectBtn:SetScript("OnClick", function()
@@ -543,12 +499,11 @@ local function buildDebugFrame()
     return f
 end
 
--- ══════════════════════════════════════════════════════════════════════════════
+-- ══════════════════════════════════════════════════════════════════════════════════════════
 -- SECTION 4 — Public entry point
--- ══════════════════════════════════════════════════════════════════════════════
-
--- Toggles the debug window visibility. Creates the frame if it doesn't exist,
--- then shows or hides it. Always refreshes the content when opening.
+-- Exposes a function to open the debug window, which builds the snapshot and
+-- updates the display each time it's opened. The window can be toggled with the same command
+-- ══════════════════════════════════════════════════════════════════════════════════════════
 function ICN2:OpenDebug()
     if not debugFrame then
         debugFrame = buildDebugFrame()
@@ -572,7 +527,6 @@ end
 -- Uses a wrapper so Core's original handler still fires for all other commands.
 -- ══════════════════════════════════════════════════════════════════════════════
 
--- Wait for ADDON_LOADED to ensure Core's SlashCmdList entry exists first.
 local hookFrame = CreateFrame("Frame")
 hookFrame:RegisterEvent("ADDON_LOADED")
 hookFrame:SetScript("OnEvent", function(self, event, name)
