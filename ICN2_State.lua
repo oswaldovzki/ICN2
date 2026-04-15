@@ -1,59 +1,62 @@
 -- ============================================================
 -- ICN2_State.lua
--- World-sensing module. Its only job is answering:
--- "What is the player currently doing?"
+-- World-sensing module. Its only job is answering: "What is the player currently doing?"
 --
--- ICN2.State is the single source of truth for all condition
--- flags. Every field is a plain fact about the player — no
--- gameplay math lives here.
---
--- The rate engine in Core reads ICN2.State but never writes it.
--- OnEvent in Core writes inCombat directly via ICN2.State.
--- Everything else is updated by ICN2:UpdateState() each tick.
---
--- Load order: after ICN2_Data.lua, before ICN2_Core.lua.
+-- ICN2.State is the single source of truth for all condition flags. Every field is a plain fact about the player
+-- No gameplay math lives here.
 -- ============================================================
 
 ICN2 = ICN2 or {}
 
 -- ── State table ───────────────────────────────────────────────────────────────
 -- All fields default to their safest / most conservative value.
--- inCombat is the only field written by an event rather than UpdateState(),
--- because PLAYER_REGEN_DISABLED/ENABLED fire instantly and we want zero lag.
+-- inCombat is the only field written by an event rather than UpdateState().
 ICN2.State = {
-    inCombat    = false,  -- written by Core OnEvent (PLAYER_REGEN_*)
-    isSwimming  = false,  -- IsSubmerged()
-    isSitting   = false,  -- aura-based: "Restful" buff from /sit, /sleep, /kneel
-    isResting   = false,  -- IsResting() — inn, city, garrison, etc.
-    isFlying    = false,  -- IsFlying()
-    isMounted   = false,  -- IsMounted()
-    isIndoors   = false,  -- IsIndoors()
-    nearCampfire = false, -- player has a Cozy Fire / campfire buff
-    inHousing   = false,  -- player is in a housing zone/plot
+    inCombat    = false, -- set by PLAYER_REGEN_DISABLED / PLAYER_REGEN_ENABLED events for zero-latency response
+    isSwimming  = false, -- IsSubmerged()
+    isSitting   = false, -- currently not working
+    isResting   = false, -- IsResting() — inn, city, garrison, etc.
+    isFlying    = false, -- IsFlying()
+    isMounted   = false, -- IsMounted()
+    isIndoors   = false, -- IsIndoors()
+    nearCampfire = false,-- player has a Cozy Fire / campfire buff
+    inHousing   = false, -- player is in a housing zone/plot
+    inInstance  = false, -- IsInInstance() — dungeon, raid, BG, arena (aura scanning disabled)
 }
 
-local SIT_AURA_PATTERNS = { "restful", "resting", "sitting" }
+local SIT_AURA_PATTERNS = { "restful", "resting", "sitting" } -- Currently not working
 
 -- ── UpdateState ───────────────────────────────────────────────────────────────
 function ICN2:UpdateState()
     local s = ICN2.State
 
-    -- inCombat is NOT set here — it's set immediately by PLAYER_REGEN_* events
-    -- in Core for zero-latency response. We just leave it as-is.
-
+    -- inCombat is NOT set here. It's set immediately by PLAYER_REGEN_* events in Core for zero-latency response.
     s.isSwimming = (IsSubmerged and IsSubmerged()) and true or false
     s.isResting  = IsResting()  and true or false
     s.isFlying   = IsFlying()   and true or false
     s.isMounted  = IsMounted()  and true or false
     s.isIndoors  = IsIndoors()  and true or false
 
-    -- ── Aura-based detection (sitting + campfire) ─────────────────────────────
+    -- ── Instance detection ────────────────────────────────────────────────────
+    -- Detect dungeons, raids, battlegrounds, arenas (all have tainted auras).
+    -- This prevents "secret string" errors that occur when scanning encounter buffs.
+    local inInst, instType = IsInInstance()
+    s.inInstance = inInst and (instType == "party" or instType == "raid" 
+                              or instType == "pvp" or instType == "arena")
+
+    -- ── Instance mode: skip aura scanning ─────────────────────────────────────
+    if s.inInstance then
+        s.isSitting    = false
+        s.nearCampfire = false
+        s.inHousing    = false
+        return  -- Exit early — no aura scanning in instances
+    end
+
+    -- ── Aura-based detection ──────────────────────────────────────────────
     -- Two guards before the scan:
-    --   1. s.inCombat  — set by PLAYER_REGEN_DISABLED event (zero latency)
-    --   2. UnitAffectingCombat — covers the rare window where encounter auras
-    --      arrive via UNIT_AURA before PLAYER_REGEN_DISABLED fires. Boss/combat
-    --      auras in that window have tainted secret names; calling string.lower()
-    --      on them throws "attempt to perform string conversion on a secret string".
+    --   1. s.inCombat
+    --   2. UnitAffectingCombat. Covers the rare window where encounter auras
+    --      arrive via UNIT_AURA before PLAYER_REGEN_DISABLED fires.
     -- inHousing is intentionally NOT cleared on combat; the zone is unchanged.
     if s.inCombat or UnitAffectingCombat("player") then
         s.isSitting    = false
@@ -64,12 +67,11 @@ function ICN2:UpdateState()
     local sitFound      = false
     local campfireFound = false
     local i = 1
-    while true do
+    while true do -- Iterate over buffs until we run out or find both signals. (No need to scan debuffs)
         local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not aura then break end
 
-        -- pcall guards against any remaining tainted aura names that slip
-        -- past the combat check (e.g. from a previous frame's residual state).
+        -- pcall guards against any remaining tainted aura names that slip past the combat check).
         local ok, lower = pcall(function()
             return aura.name and string.lower(aura.name) or ""
         end)

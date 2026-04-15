@@ -22,6 +22,14 @@
         "UIDropDownMenu_AddButton",
         "UIDropDownMenu_CreateInfo",
         "UIDropDownMenu_SetSelectedValue",
-        "CloseDropDownMenus"
+        "CloseDropDownMenus",
+        "ICN2DB",
+        "GetUnitStandState",
+        "GetSpellDescription",
+        "DoEmote"
+    ],
+    "Lua.diagnostics.disable": [
+        "deprecated",
+        "duplicate-set-field"
     ]
 }
