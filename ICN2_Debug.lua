@@ -176,8 +176,6 @@ local function getSettings()
     }
 end
 
-<<<<<<< Updated upstream
-=======
 -- ── Rate calculation pipeline breakdown ──────────────────────────────────────
 -- Captures the rates table after each modifier step in GetCurrentRates().
 -- This shows exactly how each modifier layer affects the final net rates.
@@ -292,7 +290,6 @@ local function getDepletionRates(rates)
     }
 end
 
->>>>>>> Stashed changes
 -- ── Build the full snapshot table ─────────────────────────────────────────────
 -- Assembles all debug information into a single table structure.
 -- This includes current needs, rates, state flags, modifiers, and settings.
@@ -316,6 +313,10 @@ local function buildSnapshot()
             thirst  = rates.thirst,
             fatigue = rates.fatigue,
         },
+
+        rate_calculation_pipeline = getRatePipeline(),
+
+        depletion_rate = getDepletionRates(rates),
 
         state = {
             inCombat    = st.inCombat    or false,
@@ -401,7 +402,7 @@ local function serialize(val, indent)
             local lines = {}
             for _, k in ipairs(keys) do
                 local v = val[k]
-                if type(v) ~= "function" then
+                if type(v) ~= "function" and type(v) ~= "userdata" then
                     lines[#lines + 1] = pad2 .. '"' .. k .. '": ' .. serialize(v, indent + 1)
                 end
             end
