@@ -6,7 +6,7 @@
 ICN2 = ICN2 or {}  -- Safely initialize the global ICN2 table to avoid overwriting existing data
 
 -- Reset savedvariables.decayrates to new 2.0 logic
-local CURRENT_VERSION = 200 -- Or "1.8.1", use a number for easier comparison
+local CURRENT_VERSION = 200
 
 function ICN2:RunMigrations()
     if not ICN2DB.version or ICN2DB.version < 200 then
@@ -18,7 +18,7 @@ function ICN2:RunMigrations()
         
         ICN2DB.version = CURRENT_VERSION
         
-        print("|cFFFF6600ICN2|r: Rates updated to v1.8.1 defaults.")
+        print("|cFFFF6600ICN2|r: Rates updated to v2.0.0 defaults.")
     end
 end
 
@@ -28,7 +28,7 @@ ICN2.DEFAULTS = {
     thirst  = 100.0,
     fatigue = 100.0,
     lastLogout = nil,  -- timestamp via time()
-    wellFedEligible = true,  -- v1.8.1: eligibility flag for Well Fed hunger pause
+    wellFedEligible = true,
 
     
     settings = {
@@ -110,7 +110,7 @@ ICN2.SITUATION_MODIFIERS = {
 ICN2.RACE_MODIFIERS = {
     -- Horde
     ["Orc"]                 = { hunger = 0.95, thirst = 1.00, fatigue = 0.92 }, -- strong constitution, excellent endurance},
-    ["Scourge"]             = { hunger = 0.50, thirst = 0.60, fatigue = 0.75 }, -- undead don't need food/water, but still get tired from body parts decaying
+    ["Scourge"]             = { hunger = 0.30, thirst = 0.40, fatigue = 0.75 }, -- undead don't need food/water, but still get tired from body parts decaying
     ["Tauren"]              = { hunger = 1.08, thirst = 1.00, fatigue = 0.88 }, -- large body, great endurance: big appetite but slower fatigue
     ["Troll"]               = { hunger = 1.00, thirst = 1.08, fatigue = 1.00 }, -- regeneration balances tropical thirst, but active lifestyle causes more hunger and fatigue
     ["BloodElf"]            = { hunger = 1.00, thirst = 1.00, fatigue = 1.00 }, -- refined but unremarkable needs

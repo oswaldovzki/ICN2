@@ -39,8 +39,6 @@ local function matchesAny(name, patterns)
 
     local success, lower = pcall(string.lower, name)
     if not success then
-        -- Name is tainted (secret string from combat/encounter auras)
-        -- Skip this aura silently - it's not a food/drink buff
         return false
     end
     
