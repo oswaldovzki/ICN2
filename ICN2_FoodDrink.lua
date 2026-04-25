@@ -37,9 +37,10 @@ local FEAST_NAME_PATTERNS  = { "feast", "banquet", "spread", "bountiful" }
 local function matchesAny(name, patterns)
     if not name or not patterns then return false end
 
+    -- pcall guards against tainted "secret string" values that slip past instance checks
     local success, lower = pcall(string.lower, name)
     if not success then
-        return false
+        return false  -- Name is tainted, skip safely
     end
     
     for _, p in ipairs(patterns) do
@@ -55,6 +56,11 @@ end
 
 -- Finds the first aura on the player that matches any of the given patterns
 local function findAura(patterns, extraPatterns)
+    local inInst, instType = IsInInstance()
+    if inInst and (instType == "party" or instType == "raid" 
+                   or instType == "pvp" or instType == "arena") then
+        return nil
+    end
     if ICN2.State and ICN2.State.inInstance then
         return nil
     end
@@ -153,10 +159,16 @@ local function applyBonus(state, need, natural)
 
     ICN2:UpdateHUD()
 
-    local needStr = (need == "hunger") and "|cFF00FF00Hunger|r" or "|cFF4499FFThirst|r"
-    if isFeast then needStr = "|cFF00FF00Hunger|r & |cFF4499FFThirst|r" end
-    print(string.format("|cFFFF6600ICN2|r %s completion bonus! (+%.0f pts — %s tier)",
-        needStr, bonus, state.tier))
+    local L = ICN2.L
+    local needStr
+    if isFeast then
+        needStr = L["HUNGER"] .. " & " .. L["THIRST"]
+    elseif need == "hunger" then
+        needStr = ICN2.COLOR.HUNGER .. L["HUNGER"] .. ICN2.COLOR.RESET
+    else
+        needStr = ICN2.COLOR.THIRST .. L["THIRST"] .. ICN2.COLOR.RESET
+    end
+    print(ICN2:L("MSG_COMPLETION_BONUS", needStr, bonus, state.tier))
 end
 
 -- ── Main aura scan ────────────────────────────────────────────────────────────
@@ -198,9 +210,7 @@ function ICN2:OnUnitAura()
             ICN2._wellFedPauseExpiry    = now + WELLFED_PAUSE_SECS
             ICN2DB.wellFedEligible      = false
             
-            print(string.format(
-                "|cFFFF6600ICN2|r |cFF00FF00Well Fed!|r Hunger decay paused for %d min.",
-                math.floor(WELLFED_PAUSE_SECS / 60)))
+            print(ICN2:L("MSG_WELL_FED", math.floor(WELLFED_PAUSE_SECS / 60)))
         end
     else
         ICN2._lastWellFedInstanceID = nil

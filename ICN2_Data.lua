@@ -18,7 +18,7 @@ function ICN2:RunMigrations()
         
         ICN2DB.version = CURRENT_VERSION
         
-        print("|cFFFF6600ICN2|r: Rates updated to v2.0.0 defaults.")
+        print(ICN2:L("MSG_RATES_UPDATED"))
     end
 end
 

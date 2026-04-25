@@ -48,7 +48,7 @@ ICN2.HUD_THEMES = {
 
     smooth = {
         id    = "smooth",
-        label = "Smooth",
+        label = ICN2.L["THEME_SMOOTH"],
         mode  = "smooth",
         chrome = {
             bgCenter      = { 0.05, 0.05, 0.05, 0.88 },
@@ -69,7 +69,7 @@ ICN2.HUD_THEMES = {
 
     blocky = {
         id    = "blocky",
-        label = "Blocky",
+        label = ICN2.L["THEME_BLOCKY"],
         mode  = "blocky",
         chrome = {
             bgCenter      = { 0.05, 0.05, 0.05, 0.88 },
@@ -90,7 +90,7 @@ ICN2.HUD_THEMES = {
 
     folk = {
         id    = "folk",
-        label = "Folk  |cFF888888(WIP)|r",
+        label = ICN2.L["THEME_FOLK"] .. "  " .. ICN2.L["THEME_WIP"],
         mode  = "smooth",
         chrome = {
             bgCenter      = { 0.08, 0.05, 0.02, 0.92 },
@@ -115,7 +115,7 @@ ICN2.HUD_THEMES = {
 
     necromancer = {
         id    = "necromancer",
-        label = "Necromancer  |cFF888888(WIP)|r",
+        label = ICN2.L["THEME_NECROMANCER"] .. "  " .. ICN2.L["THEME_WIP"],
         mode  = "smooth",
         chrome = {
             bgCenter      = { 0.03, 0.03, 0.04, 0.96 },
@@ -141,7 +141,7 @@ ICN2.HUD_THEMES = {
 
     dastardly = {
         id    = "dastardly",
-        label = "Dastardly",
+        label = ICN2.L["THEME_DASTARDLY"],
         mode  = "smooth",
         chrome = {
             bgCenter      = { 0.04, 0.04, 0.04, 0.92 },
@@ -181,6 +181,10 @@ ICN2.HUD_THEME_LIST = {
 local function getTheme()
     local id = ICN2DB and ICN2DB.settings and ICN2DB.settings.barTheme or "smooth"
     return ICN2.HUD_THEMES[id] or ICN2.HUD_THEMES.smooth
+end
+
+function ICN2:GetHUDTheme(themeId)
+    return ICN2.HUD_THEMES[themeId] or ICN2.HUD_THEMES.smooth
 end
 
 -- ══ SECTION 2 — Indicator logic ════════════════════════════════════════════════
@@ -233,6 +237,7 @@ end
 
 -- ══  SECTION 4 — Build HUD  ════════════════════════════════════════════════════
 function ICN2:BuildHUD() -- called once on demand when HUD is first shown; builds entire frame hierarchy and saves references in module state
+    local L        = ICN2.L
     local s        = ICN2DB.settings
     local barScale = s.hudBarScale or 1.0
     local barW     = math.floor(BASE_BAR_W * barScale)
@@ -259,13 +264,20 @@ function ICN2:BuildHUD() -- called once on demand when HUD is first shown; build
         ICN2DB.settings.hudY = y
     end)
     hudFrame:SetScript("OnEnter", function(self)
+        local L = ICN2.L
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("|cFFFF6600ICN2 - Character Needs|r", 1, 1, 1)
-        GameTooltip:AddLine(string.format("Hunger:  %.1f%%", ICN2:GetNeedPercent("hunger")),  0.2, 0.8, 0.2)
-        GameTooltip:AddLine(string.format("Thirst:  %.1f%%", ICN2:GetNeedPercent("thirst")),  0.2, 0.5, 1.0)
-        GameTooltip:AddLine(string.format("Fatigue: %.1f%%", ICN2:GetNeedPercent("fatigue")), 1.0, 0.85, 0.1)
+        GameTooltip:SetText(L["HUD_TOOLTIP_TITLE"], 1, 1, 1)
+        GameTooltip:AddLine(
+            L["HUNGER"] .. ":  " .. ICN2.COLOR.HUNGER .. string.format("%.1f%%", ICN2:GetNeedPercent("hunger")) .. ICN2.COLOR.RESET,
+            1, 1, 1)
+        GameTooltip:AddLine(
+            L["THIRST"] .. ":  " .. ICN2.COLOR.THIRST .. string.format("%.1f%%", ICN2:GetNeedPercent("thirst")) .. ICN2.COLOR.RESET,
+            1, 1, 1)
+        GameTooltip:AddLine(
+            L["FATIGUE"] .. ": " .. ICN2.COLOR.FATIGUE .. string.format("%.1f%%", ICN2:GetNeedPercent("fatigue")) .. ICN2.COLOR.RESET,
+            1, 1, 1)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("|cFFAAAAAA/icn2 details|r", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["HUD_TOOLTIP_DETAILS"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     hudFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -325,7 +337,7 @@ function ICN2:BuildHUD() -- called once on demand when HUD is first shown; build
 
     local title = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", headerFrame, "LEFT", 4, 0)
-    title:SetText("Character Needs")
+    title:SetText(L["HUD_TITLE"])
 
     local btnOptions = CreateFrame("Button", nil, headerFrame)
     btnOptions:SetSize(20, 20)
