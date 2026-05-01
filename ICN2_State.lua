@@ -66,19 +66,15 @@ function ICN2:UpdateState()
 
     local sitFound      = false
     local campfireFound = false
-    local i = 1
-    while true do -- Iterate over buffs until we run out or find both signals. (No need to scan debuffs)
-        local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-        if not aura then break end
 
-        -- pcall guards against any remaining tainted aura names that slip past the combat check).
+    -- Read from the shared aura cache maintained by ICN2_FoodDrink.lua.
+    -- No aura scan here — the cache is already current when UpdateState() is called
+    -- because UNIT_AURA patches it before the tick reads it.
+    for _, aura in pairs(ICN2._auraCache or {}) do
         local ok, lower = pcall(function()
             return aura.name and string.lower(aura.name) or ""
         end)
-        if not ok then
-            -- Name is tainted (secret string). Skip this aura safely.
-            i = i + 1
-        else
+        if ok then
             if not sitFound then
                 for _, p in ipairs(SIT_AURA_PATTERNS) do
                     if lower:find(p, 1, true) then sitFound = true; break end
@@ -89,9 +85,8 @@ function ICN2:UpdateState()
                     if lower:find(p, 1, true) then campfireFound = true; break end
                 end
             end
-            if sitFound and campfireFound then break end
-            i = i + 1
         end
+        if sitFound and campfireFound then break end
     end
 
     s.isSitting    = sitFound

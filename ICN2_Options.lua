@@ -6,6 +6,10 @@
 
 ICN2 = ICN2 or {}
 
+local L = setmetatable({}, { __index = function(_, k)
+    return ICN2.L and ICN2.L[k] or k
+end })
+
 local optFrame
 local panelGeneral
 local panelDecay
@@ -59,8 +63,8 @@ end
 
 -- ── Decay bias slider: integer 0..max (0 = no passive decay; max = 10× Fast), optional read-only ──
 local function formatBiasLabel(needLabel, sliderPos, decayMult, readOnly)
-    local ro = readOnly and "  |cFF888888(preset)|r" or ""
-    return string.format("%s: %d  (×%.2f vs Medium base)%s", needLabel, sliderPos, decayMult, ro)
+    local key = readOnly and "BIAS_LABEL_READONLY" or "BIAS_LABEL"
+    return string.format(L[key], needLabel, sliderPos, decayMult)
 end
 
 local function roundBias(n)
@@ -184,11 +188,11 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
     optFrame:SetScript("OnDragStop",  function(self) self:StopMovingOrSizing() end)
     optFrame:Hide()
 
-    optFrame.TitleText:SetText("|cFFFF6600ICN2|r – Character Needs  |cFF888888v1.5.0|r")
+    optFrame.TitleText:SetText(L["OPT_TITLE"])
 
     -- Tabs
-    tabBtnGeneral = makeTabButton(optFrame, "General", 14, -28, function() selectOptionsTab(1) end)
-    tabBtnDecay   = makeTabButton(optFrame, "Decay & rates", 148, -28, function() selectOptionsTab(2) end)
+    tabBtnGeneral = makeTabButton(optFrame, L["TAB_GENERAL"], 14, -28, function() selectOptionsTab(1) end)
+    tabBtnDecay   = makeTabButton(optFrame, L["TAB_DECAY"],   148, -28, function() selectOptionsTab(2) end)
 
     -- Content panels (shared area below tabs)
     panelGeneral = CreateFrame("Frame", nil, optFrame)
@@ -201,17 +205,17 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
     panelDecay:Hide()
 
     -- ══════════ GENERAL TAB ══════════════════════════════════════════════════
-    makeLabel(panelGeneral, "HUD", 14, -6, 1, 0.8, 0)
+    makeLabel(panelGeneral, L["OPT_SEC_HUD"], 14, -6, 1, 0.8, 0)
 
-    makeCheckbox(panelGeneral, "Enable HUD", 14, -26,
+    makeCheckbox(panelGeneral, L["OPT_HUD_ENABLED"], 14, -26,
         function() return ICN2DB.settings.hudEnabled end,
         function(v) ICN2DB.settings.hudEnabled = v; ICN2:UpdateHUD() end)
 
-    makeCheckbox(panelGeneral, "Lock HUD position", 14, -52,
+    makeCheckbox(panelGeneral, L["OPT_HUD_LOCKED"], 14, -52,
         function() return ICN2DB.settings.hudLocked end,
         function(v) ICN2DB.settings.hudLocked = v; ICN2:LockHUD(v) end)
 
-    makeLabel(panelGeneral, "Theme:", 200, -6, 1, 0.8, 0)
+    makeLabel(panelGeneral, L["OPT_SEC_THEME"], 200, -6, 1, 0.8, 0)
 
     local THEMES = ICN2.HUD_THEME_LIST or {
         { id = "smooth", label = "Smooth" },
@@ -254,10 +258,10 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
     end)
 
     local LABEL_MODES = {
-    { id = "none",       label = "None" },
-    { id = "percentage", label = "Percentage" },
-    { id = "number",     label = "Number" },
-    { id = "both",       label = "Both" },
+    { id = "none",       label = L["LABEL_NONE"]       },
+    { id = "percentage", label = L["LABEL_PERCENTAGE"] },
+    { id = "number",     label = L["LABEL_NUMBER"]     },
+    { id = "both",       label = L["LABEL_BOTH"]       },
 }
 
     local labelDropdown = CreateFrame("Frame", "ICN2LabelDropdown", panelGeneral, "UIDropDownMenuTemplate")
@@ -290,7 +294,7 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
         end
     end)
 
-    makeSlider(panelGeneral, "Opacity", 14, -84, 0.1, 1.0, 0.05,
+    makeSlider(panelGeneral, L["OPT_OPACITY"], 14, -84, 0.1, 1.0, 0.05,
         function() return ICN2DB.settings.hudAlpha end,
         function(v)
             ICN2DB.settings.hudAlpha = v
@@ -298,7 +302,7 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
             if f then f:SetAlpha(v) end
         end)
 
-    makeSlider(panelGeneral, "Scale", 14, -129, 0.5, 2.0, 0.1,
+    makeSlider(panelGeneral, L["OPT_SCALE"], 14, -129, 0.5, 2.0, 0.1,
         function() return ICN2DB.settings.hudScale end,
         function(v)
             ICN2DB.settings.hudScale = v
@@ -306,7 +310,7 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
             if f then f:SetScale(v) end
         end)
 
-    makeSlider(panelGeneral, "Bar length", 14, -172, 0.5, 1.5, 0.05,
+    makeSlider(panelGeneral, L["OPT_BAR_LENGTH"], 14, -172, 0.5, 1.5, 0.05,
         function() return ICN2DB.settings.hudBarScale or 1.0 end,
         function(v)
             ICN2DB.settings.hudBarScale = v
@@ -315,59 +319,59 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
 
     makeSeparator(panelGeneral, 14, -217, 358)
 
-    makeLabel(panelGeneral, "Immersion", 14, -225, 1, 0.8, 0)
+    makeLabel(panelGeneral, L["OPT_SEC_IMMERSION"], 14, -225, 1, 0.8, 0)
 
-    makeCheckbox(panelGeneral, "Freeze needs while offline  |cFF888888(no offline decay)|r", 14, -245,
+    makeCheckbox(panelGeneral, L["OPT_FREEZE_OFFLINE"], 14, -245,
         function() return ICN2DB.settings.freezeOfflineNeeds end,
         function(v) ICN2DB.settings.freezeOfflineNeeds = v end)
 
     local fdLabel = panelGeneral:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     fdLabel:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 14, -277)
-    fdLabel:SetText("|cFF888888Food/drink buffs are detected automatically.|r")
+    fdLabel:SetText(L["OPT_FOOD_AUTO"])
     fdLabel:SetWidth(400)
 
     makeSeparator(panelGeneral, 14, -302, 358)
 
-    makeLabel(panelGeneral, "Emotes", 14, -310, 1, 0.8, 0)
+    makeLabel(panelGeneral, L["OPT_SEC_EMOTES"], 14, -310, 1, 0.8, 0)
 
-    makeCheckbox(panelGeneral, "Enable automatic emotes", 14, -330,
+    makeCheckbox(panelGeneral, L["OPT_EMOTES_ENABLED"], 14, -330,
         function() return ICN2DB.settings.emotesEnabled end,
         function(v) ICN2DB.settings.emotesEnabled = v end)
 
-    makeSlider(panelGeneral, "Emote chance", 14, -360, 0.0, 1.0, 0.05,
+    makeSlider(panelGeneral, L["OPT_EMOTE_CHANCE"], 14, -360, 0.0, 1.0, 0.05,
         function() return ICN2DB.settings.emoteChance end,
         function(v) ICN2DB.settings.emoteChance = v end)
 
-    makeSlider(panelGeneral, "Min interval (sec)", 14, -405, 30, 600, 10,
+    makeSlider(panelGeneral, L["OPT_EMOTE_INTERVAL"], 14, -405, 30, 600, 10,
         function() return ICN2DB.settings.emoteMinInterval end,
         function(v) ICN2DB.settings.emoteMinInterval = v end)
 
     makeSeparator(panelGeneral, 14, -448, 358)
 
-    makeLabel(panelGeneral, "Manual restore", 14, -456, 1, 0.8, 0)
+    makeLabel(panelGeneral, L["OPT_SEC_MANUAL_RESTORE"], 14, -456, 1, 0.8, 0)
 
     local eatBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     eatBtn:SetSize(80, 24)
     eatBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 14, -474)
-    eatBtn:SetText("|cFF00FF00Eat|r")
+    eatBtn:SetText(L["BTN_EAT"])
     eatBtn:SetScript("OnClick", function() ICN2:Eat(50) end)
 
     local drinkBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     drinkBtn:SetSize(80, 24)
     drinkBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 102, -474)
-    drinkBtn:SetText("|cFF4499FFDrink|r")
+    drinkBtn:SetText(L["BTN_DRINK"])
     drinkBtn:SetScript("OnClick", function() ICN2:Drink(50) end)
 
     local restBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     restBtn:SetSize(80, 24)
     restBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 190, -474)
-    restBtn:SetText("|cFFFFDD00Rest|r")
+    restBtn:SetText(L["BTN_REST"])
     restBtn:SetScript("OnClick", function() ICN2:Rest(40) end)
 
     local resetBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     resetBtn:SetSize(80, 24)
     resetBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 278, -474)
-    resetBtn:SetText("|cFFFF4444Reset|r")
+    resetBtn:SetText(L["BTN_RESET"])
     resetBtn:SetScript("OnClick", function()
         ICN2DB.hunger  = ICN2:GetMaxValue("hunger")
         ICN2DB.thirst  = ICN2:GetMaxValue("thirst")
@@ -375,12 +379,12 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
         ICN2:UpdateHUD()
     end)
 
-    makeLabel(panelGeneral, "Manual deplete", 14, -508, 1, 0.8, 0)
+    makeLabel(panelGeneral, L["OPT_SEC_MANUAL_DEPLETE"], 14, -508, 1, 0.8, 0)
 
     local starveBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     starveBtn:SetSize(80, 24)
     starveBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 14, -526)
-    starveBtn:SetText("|cFFFF4444Starve|r")
+    starveBtn:SetText(L["BTN_STARVE"])
     starveBtn:SetScript("OnClick", function()
         ICN2DB.hunger = 0
         ICN2:UpdateHUD()
@@ -389,7 +393,7 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
     local dehydrateBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     dehydrateBtn:SetSize(80, 24)
     dehydrateBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 102, -526)
-    dehydrateBtn:SetText("|cFFFF4444Dehydrate|r")
+    dehydrateBtn:SetText(L["BTN_DEHYDRATE"])
     dehydrateBtn:SetScript("OnClick", function()
         ICN2DB.thirst = 0
         ICN2:UpdateHUD()
@@ -398,14 +402,14 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
     local exhaustBtn = CreateFrame("Button", nil, panelGeneral, "UIPanelButtonTemplate")
     exhaustBtn:SetSize(80, 24)
     exhaustBtn:SetPoint("TOPLEFT", panelGeneral, "TOPLEFT", 190, -526)
-    exhaustBtn:SetText("|cFFFF4444Exhaust|r")
+    exhaustBtn:SetText(L["BTN_EXHAUST"])
     exhaustBtn:SetScript("OnClick", function()
         ICN2DB.fatigue = 0
         ICN2:UpdateHUD()
     end)
 
     -- ══════════ DECAY TAB ════════════════════════════════════════════════════
-    makeLabel(panelDecay, "Decay preset", 14, -6, 1, 0.8, 0)
+    makeLabel(panelDecay, L["OPT_SEC_DECAY_PRESET"], 14, -6, 1, 0.8, 0)
 
     local presets = { "fast", "medium", "slow", "realistic", "custom" }
     presetBtns = {}
@@ -432,20 +436,15 @@ function ICN2:BuildOptions() -- Called once on ADDON_LOADED to construct the opt
     help1:SetPoint("TOPLEFT", panelDecay, "TOPLEFT", 14, -58)
     help1:SetWidth(420)
     help1:SetJustifyH("LEFT")
-    help1:SetText(
-        "|cFFCCCCCCChoose a preset for global decay speed, or |cFFFFCC00Custom|r to tune each need.|r\n" ..
-        "|cFF888888Custom multiplier vs Medium (1×): |cFFFFFFFF0|r = no passive decay; |cFFFFFFFF" ..
-        tostring(ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30) ..
-        "|r = 10× Fast. Sliders are read-only unless Custom.|r"
-    )
+    help1:SetText(string.format(L["DESC_DECAY_LONG"], ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30))
 
     makeSeparator(panelDecay, 14, -108, 400)
 
-    makeLabel(panelDecay, "Per-need decay bias", 14, -118, 1, 0.8, 0)
+    makeLabel(panelDecay, L["OPT_SEC_BIAS"], 14, -118, 1, 0.8, 0)
 
-    makeDecayBiasSlider(panelDecay, "hunger",  "Hunger",  14, -142)
-    makeDecayBiasSlider(panelDecay, "thirst",  "Thirst",  14, -192)
-    makeDecayBiasSlider(panelDecay, "fatigue", "Fatigue", 14, -242)
+    makeDecayBiasSlider(panelDecay, "hunger",  L["HUNGER"],  14, -142)
+    makeDecayBiasSlider(panelDecay, "thirst",  L["THIRST"],  14, -192)
+    makeDecayBiasSlider(panelDecay, "fatigue", L["FATIGUE"], 14, -242)
 
     refreshDecaySliders()
 

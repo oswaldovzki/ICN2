@@ -5,6 +5,10 @@
 
 ICN2 = ICN2 or {}  -- Safely initialize the global ICN2 table to avoid overwriting existing data
 
+local L = setmetatable({}, { __index = function(_, k)
+    return ICN2.L and ICN2.L[k] or k
+end })
+
 -- Reset savedvariables.decayrates to new 2.0 logic
 local CURRENT_VERSION = 200
 
@@ -18,7 +22,7 @@ function ICN2:RunMigrations()
         
         ICN2DB.version = CURRENT_VERSION
         
-        print("|cFFFF6600ICN2|r: Rates updated to v2.0.0 defaults.")
+        print("|cFFFF6600ICN2|r: " .. L["MSG_RATES_UPDATED"])
     end
 end
 

@@ -37,3 +37,13 @@
 - Food/Drink: simplify tier math and adjust tier values, improve aura/item detection (nil guards, tooltip API, container/class/subclass checks), prevent aura scanning in instances/combat, implement wellFedEligible handling and robust Well Fed pause consumption. Emotes: prevent emotes in combat, respect min intervals and chance checks, minor cleanup.
 - Debug/UI: enlarge and polish debug window (sizes, font), improve serializer/pretty-printing, streamline snapshot pipeline and refresh/select controls, update debug version tag. Misc: various formatting/comment tweaks and VSCode Lua diagnostics/globals added, and CHANGELOG reorganized with new v1.8.x entries.
 - TOC update to 2.0.0.
+
+## v2.1.0
+
+### Localization
+
+
+### Aura Scanning
+
+
+### 

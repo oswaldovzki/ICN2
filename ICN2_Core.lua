@@ -27,6 +27,13 @@
 
 ICN2 = ICN2 or {}
 
+-- ICN2_Localization.lua loads before this file (see .toc order) and sets ICN2.L.
+-- We alias it at file scope so all functions below can use the short form.
+-- The metatable fallback in Localization guarantees missing keys return themselves.
+local L = setmetatable({}, { __index = function(_, k)
+    return ICN2.L and ICN2.L[k] or k
+end })
+
 -- ── Frame and tick ────────────────────────────────────────────────────────────
 local frame        = CreateFrame("Frame", "ICN2Frame", UIParent) -- single frame for handling all events and OnUpdate; we keep it local since external modules don't need to access it
 local tickInterval = 1.0 -- seconds between each tick; OnUpdate accumulates elapsed time and triggers a tick when the interval is reached
@@ -122,7 +129,7 @@ local function initDB() -- initializes the saved variable database, applying def
         ICN2DB.thirst  = math.max(0, math.min(maxT, (ICN2DB.thirst  / 100) * maxT))
         ICN2DB.fatigue = math.max(0, math.min(maxF, (ICN2DB.fatigue / 100) * maxF))
         ICN2DB.settings.needsPointVersion = 1
-        print("|cFFFF6600ICN2|r Needs migrated to point-based system.")
+        print("|cFFFF6600ICN2|r " .. L["MSG_MIGRATED_POINTS"])
     end
 end
 
@@ -385,18 +392,18 @@ function ICN2:_ApplyFatigueRecovery(rates)
     if st.isResting and (st.nearCampfire or st.inHousing) then
         gain = recFast
         tier = "fast"
-        table.insert(src, "rested area")
-        if st.nearCampfire then table.insert(src, "campfire") end
-        if st.inHousing    then table.insert(src, "housing")  end
+        table.insert(src, L["SRC_RESTED_AREA"])
+        if st.nearCampfire then table.insert(src, L["SRC_CAMPFIRE"]) end
+        if st.inHousing    then table.insert(src, L["SRC_HOUSING"])  end
 
     elseif st.isResting or st.isSitting or st.nearCampfire or st.inHousing or isEatDrink then
         gain = recSlow
         tier = "slow"
-        if st.isResting    then table.insert(src, "rested area")     end
-        if st.isSitting    then table.insert(src, "sitting")         end
-        if st.nearCampfire then table.insert(src, "campfire")        end
-        if st.inHousing    then table.insert(src, "housing")         end
-        if isEatDrink      then table.insert(src, "eating/drinking") end
+        if st.isResting    then table.insert(src, L["SRC_RESTED_AREA"])  end
+        if st.isSitting    then table.insert(src, L["SRC_SITTING"])      end
+        if st.nearCampfire then table.insert(src, L["SRC_CAMPFIRE"])     end
+        if st.inHousing    then table.insert(src, L["SRC_HOUSING"])      end
+        if isEatDrink      then table.insert(src, L["SRC_EAT_DRINK"])    end
     end
 
     rates.fatigue             = rates.fatigue + gain
@@ -504,12 +511,15 @@ frame:SetScript("OnEvent", function(self, event, ...)
             initDB()
             ICN2:BuildHUD()
             ICN2:BuildOptions()
-            print("|cFFFF6600ICN2|r loaded. Type |cFFFFFF00/icn2|r for options.")
+            print("|cFFFF6600ICN2|r " .. L["MSG_LOADED"])
         end
 
     elseif event == "PLAYER_LOGIN" then
         applyOfflineDecay()
-        C_Timer.After(1, function() refreshArmorCache() end)
+        C_Timer.After(1, function()
+            refreshArmorCache()
+            ICN2:InitAuraCache()  -- seed persistent aura cache; must run after world is ready
+        end)
         ICN2:UpdateHUD()
 
     elseif event == "PLAYER_LOGOUT" then
@@ -527,8 +537,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if slot == 5 then refreshArmorCache() end
 
     elseif event == "UNIT_AURA" then
-        local unit = ...
-        if unit == "player" then ICN2:OnUnitAura() end
+        local unit, updateInfo = ...
+        if unit == "player" then ICN2:OnUnitAura(updateInfo) end
 
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, _, spellID = ...
@@ -573,48 +583,48 @@ local function getSituationLabels() -- generates a list of active situation labe
 
     -- Show instance status prominently if active
     if st.inInstance then
-        table.insert(labels, string.format("|cFFFF9900Instance|r (H×%.2f T×%.2f F×%.2f) — aura scanning disabled",
+        table.insert(labels, string.format(L["SIT_INSTANCE"],
             sm.instance.hunger, sm.instance.thirst, sm.instance.fatigue))
         return labels  -- Instance mode overrides all other situational displays
     end
 
     if st.isResting then
-        table.insert(labels, string.format("Resting (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_RESTING"],
             sm.resting.hunger, sm.resting.thirst, sm.resting.fatigue))
         return labels  -- resting is exclusive
     end
     if st.isMounted then
-        table.insert(labels, string.format("Mounted (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_MOUNTED"],
             sm.mounted.hunger, sm.mounted.thirst, sm.mounted.fatigue))
     end
     if st.isFlying then
-        table.insert(labels, string.format("Flying (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_FLYING"],
             sm.flying.hunger, sm.flying.thirst, sm.flying.fatigue))
     end
     if st.isSwimming then
-        table.insert(labels, string.format("Swimming (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_SWIMMING"],
             sm.swimming.hunger, sm.swimming.thirst, sm.swimming.fatigue))
     end
     if st.inCombat then
-        table.insert(labels, string.format("Combat (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_COMBAT"],
             sm.combat.hunger, sm.combat.thirst, sm.combat.fatigue))
     end
     if st.isIndoors and not st.inCombat and not st.isMounted then
-        table.insert(labels, string.format("Indoors (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_INDOORS"],
             sm.indoors.hunger, sm.indoors.thirst, sm.indoors.fatigue))
     end
 
     local race = select(2, UnitRace("player"))
     local rm   = ICN2.RACE_MODIFIERS[race]
     if rm then
-        table.insert(labels, string.format("Race:%s (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_RACE"],
             race, rm.hunger, rm.thirst, rm.fatigue))
     end
 
     local _, class = UnitClass("player")
     local cm = ICN2.CLASS_MODIFIERS[class]
     if cm then
-        table.insert(labels, string.format("Class:%s (H×%.2f T×%.2f F×%.2f)",
+        table.insert(labels, string.format(L["SIT_CLASS"],
             class, cm.hunger, cm.thirst, cm.fatigue))
     end
 
@@ -651,7 +661,7 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
             return math.floor(cb[key])
         end
         presetLine = string.format(
-            "Custom — H×%.2f  T×%.2f  F×%.2f",
+            L["PRESET_CUSTOM"],
             mh, mt, mf,
             pbPrint(s.customDecayBias, "hunger"),
             pbPrint(s.customDecayBias, "thirst"),
@@ -659,47 +669,47 @@ function ICN2:PrintDetails() -- prints detailed information about the current ra
         )
     else
         local dispBias = ICN2:PresetMultiplierToBiasDisplay(ICN2.PRESETS[s.preset] or 1.0)
-        presetLine = string.format("%s (global ×%.2f — slider display %d on 0–%d scale)",
+        presetLine = string.format(L["PRESET_NAMED"],
             s.preset, ICN2.PRESETS[s.preset] or 1.0,
             dispBias,
             ICN2.CUSTOM_DECAY_MULTIPLIER_MAX or 30)
     end
-    print(P .. " |cFFFFFF00Details|r — " .. presetLine)
+    print(P .. " " .. L["DETAILS_HEADER"] .. presetLine)
     print(sep)
-    print(string.format(P .. " |cFF00FF00Hunger|r  %.1f%%  (%.1f / %d pts)  net %+.4f pts/s",
+    print(string.format(P .. " " .. L["DETAILS_HUNGER_LINE"],
         ICN2:GetNeedPercent("hunger"),  ICN2DB.hunger,  ICN2:GetMaxValue("hunger"),  rates.hunger))
-    print(string.format(P .. " |cFF4499FFThirst|r  %.1f%%  (%.1f / %d pts)  net %+.4f pts/s",
+    print(string.format(P .. " " .. L["DETAILS_THIRST_LINE"],
         ICN2:GetNeedPercent("thirst"),  ICN2DB.thirst,  ICN2:GetMaxValue("thirst"),  rates.thirst))
-    print(string.format(P .. " |cFFFFDD00Fatigue|r %.1f%%  (%.1f / %d pts)  net %+.4f pts/s  (recovery %+.4f pts/s [%s])",
+    print(string.format(P .. " " .. L["DETAILS_FATIGUE_LINE"],
         ICN2:GetNeedPercent("fatigue"), ICN2DB.fatigue, ICN2:GetMaxValue("fatigue"), rates.fatigue, fatigueGain, ICN2._fatigueRecoveryTier))
     print(sep)
-    print(P .. " |cFFAAAAAAActive modifiers:|r")
+    print(P .. " " .. L["DETAILS_ACTIVE_MOD"])
     if #labels == 0 then
-        print("  |cFF888888None (walking/idle outdoors)|r")
+        print(L["DETAILS_NO_MOD"])
     else
         for _, lbl in ipairs(labels) do print("  |cFFCCCCCC" .. lbl .. "|r") end
     end
-    print(string.format("  |cFFCCCCCCArmor:%s (F×%.2f)|r", armorName, armor))
+    print(string.format(L["DETAILS_ARMOR"], armorName, armor))
     if ICN2._fatigueRecoveryTier ~= "none" then
-        print(string.format("  |cFFCCCCCCFatigue recovery: %s — sources: %s|r",
+        print(string.format(L["DETAILS_FAT_RECOVERY"],
             ICN2._fatigueRecoveryTier,
             ICN2._fatigueRecoverySrc ~= "" and ICN2._fatigueRecoverySrc or "n/a"))
     end
     if ICN2._crossNeedActive and #ICN2._crossNeedActive > 0 then
-        print(string.format("  |cFFFF9900Cross-need: %s|r",
+        print(string.format(L["DETAILS_CROSS_NEED"],
             table.concat(ICN2._crossNeedActive, ", ")))
     end
     print(sep)
     if ICN2:IsEating() then
-        print(string.format(P .. " |cFF00FF00Currently eating|r  (tier: %s)", ICN2:GetFoodTier()))
+        print(string.format(P .. " " .. L["DETAILS_EATING"], ICN2:GetFoodTier()))
     end
     if ICN2:IsDrinking() then
-        print(string.format(P .. " |cFF4499FFCurrently drinking|r (tier: %s)", ICN2:GetDrinkTier()))
+        print(string.format(P .. " " .. L["DETAILS_DRINKING"], ICN2:GetDrinkTier()))
     end
     local wfExpiry = ICN2._wellFedPauseExpiry or 0
     if wfExpiry > 0 and GetTime() < wfExpiry then
         local remaining = math.ceil(wfExpiry - GetTime())
-        print(string.format(P .. " |cFF00FF00Well Fed|r — hunger decay paused (%ds remaining)", remaining))
+        print(string.format(P .. " " .. L["DETAILS_WELLFED"], remaining))
     end
 end
 
@@ -710,40 +720,40 @@ SlashCmdList["ICN2"] = function(msg) -- handles slash commands for showing the o
     if msg == "show" or msg == "" then
         ICN2:ToggleOptions()
     elseif msg == "eat" then
-        ICN2:Eat(50); print("|cFFFF6600ICN2|r You eat something. Hunger restored.")
+        ICN2:Eat(50); print("|cFFFF6600ICN2|r " .. L["MSG_EAT"])
     elseif msg == "drink" then
-        ICN2:Drink(50); print("|cFFFF6600ICN2|r You drink something. Thirst restored.")
+        ICN2:Drink(50); print("|cFFFF6600ICN2|r " .. L["MSG_DRINK"])
     elseif msg == "rest" then
-        ICN2:Rest(40); print("|cFFFF6600ICN2|r You rest. Fatigue restored.")
+        ICN2:Rest(40); print("|cFFFF6600ICN2|r " .. L["MSG_REST"])
     elseif msg == "reset" then
         ICN2DB.hunger  = ICN2:GetMaxValue("hunger")
         ICN2DB.thirst  = ICN2:GetMaxValue("thirst")
         ICN2DB.fatigue = ICN2:GetMaxValue("fatigue")
-        ICN2:UpdateHUD(); print("|cFFFF6600ICN2|r Needs reset to 100%.")
+        ICN2:UpdateHUD(); print("|cFFFF6600ICN2|r " .. L["MSG_RESET"])
     elseif msg == "starve" then
         ICN2DB.hunger = 0; ICN2:UpdateHUD()
-        print("|cFFFF6600ICN2|r |cFF00FF00Hunger|r set to 0%.")
+        print(string.format("|cFFFF6600ICN2|r " .. L["MSG_SET_ZERO"], "|cFF00FF00" .. L["HUNGER"] .. "|r"))
     elseif msg == "dehydrate" then
         ICN2DB.thirst = 0; ICN2:UpdateHUD()
-        print("|cFFFF6600ICN2|r |cFF4499FFThirst|r set to 0%.")
+        print(string.format("|cFFFF6600ICN2|r " .. L["MSG_SET_ZERO"], "|cFF4499FF" .. L["THIRST"] .. "|r"))
     elseif msg == "exhaust" then
         ICN2DB.fatigue = 0; ICN2:UpdateHUD()
-        print("|cFFFF6600ICN2|r |cFFFFDD00Fatigue|r set to 0%.")
+        print(string.format("|cFFFF6600ICN2|r " .. L["MSG_SET_ZERO"], "|cFFFFDD00" .. L["FATIGUE"] .. "|r"))
     elseif msg == "status" then
-        print(string.format("|cFFFF6600ICN2|r Hunger: |cFF00FF00%.1f%%|r  Thirst: |cFF4499FF%.1f%%|r  Fatigue: |cFFFFDD00%.1f%%|r",
+        print(string.format("|cFFFF6600ICN2|r " .. L["STATUS_LINE"],
             ICN2:GetNeedPercent("hunger"), ICN2:GetNeedPercent("thirst"), ICN2:GetNeedPercent("fatigue")))
     elseif msg == "details" then
         ICN2:PrintDetails()
     elseif msg == "hud" then
         ICN2DB.settings.hudEnabled = not ICN2DB.settings.hudEnabled
         ICN2:UpdateHUD()
-        print("|cFFFF6600ICN2|r HUD " .. (ICN2DB.settings.hudEnabled and "|cFF00FF00enabled|r" or "|cFFFF0000disabled|r"))
+        print("|cFFFF6600ICN2|r " .. (ICN2DB.settings.hudEnabled and L["MSG_HUD_ENABLED"] or L["MSG_HUD_DISABLED"]))
     elseif msg == "lock" then
         ICN2DB.settings.hudLocked = not ICN2DB.settings.hudLocked
         ICN2:LockHUD(ICN2DB.settings.hudLocked)
-        print("|cFFFF6600ICN2|r HUD " .. (ICN2DB.settings.hudLocked and "|cFFFF0000locked|r" or "|cFF00FF00unlocked|r"))
+        print("|cFFFF6600ICN2|r " .. (ICN2DB.settings.hudLocked and L["MSG_HUD_LOCKED"] or L["MSG_HUD_UNLOCKED"]))
     else
-        print("|cFFFF6600ICN2|r Commands: |cFFFFFF00/icn2|r [show|eat|drink|rest|reset|starve|dehydrate|exhaust|status|details|hud|lock]")
+        print("|cFFFF6600ICN2|r " .. L["MSG_COMMANDS"])
     end
 end
     

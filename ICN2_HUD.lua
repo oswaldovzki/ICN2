@@ -6,6 +6,10 @@
 
 ICN2 = ICN2 or {}
 
+local L = setmetatable({}, { __index = function(_, k)
+    return ICN2.L and ICN2.L[k] or k
+end })
+
 -- ── Module state ──────────────────────────────────────────────────────────────
 local hudFrame
 local chrome = {}
@@ -260,12 +264,12 @@ function ICN2:BuildHUD() -- called once on demand when HUD is first shown; build
     end)
     hudFrame:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("|cFFFF6600ICN2 - Character Needs|r", 1, 1, 1)
-        GameTooltip:AddLine(string.format("Hunger:  %.1f%%", ICN2:GetNeedPercent("hunger")),  0.2, 0.8, 0.2)
-        GameTooltip:AddLine(string.format("Thirst:  %.1f%%", ICN2:GetNeedPercent("thirst")),  0.2, 0.5, 1.0)
-        GameTooltip:AddLine(string.format("Fatigue: %.1f%%", ICN2:GetNeedPercent("fatigue")), 1.0, 0.85, 0.1)
+        GameTooltip:SetText(L["TOOLTIP_TITLE"], 1, 1, 1)
+        GameTooltip:AddLine(string.format(L["TOOLTIP_HUNGER"],  ICN2:GetNeedPercent("hunger")),  0.2, 0.8, 0.2)
+        GameTooltip:AddLine(string.format(L["TOOLTIP_THIRST"],  ICN2:GetNeedPercent("thirst")),  0.2, 0.5, 1.0)
+        GameTooltip:AddLine(string.format(L["TOOLTIP_FATIGUE"], ICN2:GetNeedPercent("fatigue")), 1.0, 0.85, 0.1)
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("|cFFAAAAAA/icn2 details|r", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine(L["TOOLTIP_HINT"], 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     hudFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -325,7 +329,7 @@ function ICN2:BuildHUD() -- called once on demand when HUD is first shown; build
 
     local title = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("LEFT", headerFrame, "LEFT", 4, 0)
-    title:SetText("Character Needs")
+    title:SetText(L["HUD_TITLE"])
 
     local btnOptions = CreateFrame("Button", nil, headerFrame)
     btnOptions:SetSize(20, 20)

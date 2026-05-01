@@ -6,6 +6,10 @@
 
 ICN2 = ICN2 or {}
 
+local L = setmetatable({}, { __index = function(_, k)
+    return ICN2.L and ICN2.L[k] or k
+end })
+
 -- ── Constants ─────────────────────────────────────────────────────────────────
 -- Tier data defines the recovery rates and completion bonuses for each food/drink tier
 -- All values are in FIXED POINTS (not percentages), same for all races
@@ -53,22 +57,71 @@ local function matchesAny(name, patterns)
     return false
 end
 
--- Finds the first aura on the player that matches any of the given patterns
-local function findAura(patterns, extraPatterns)
-    if ICN2.State and ICN2.State.inInstance then
-        return nil
-    end
-    
-    if not patterns then return nil end
+-- ── Persistent aura cache ─────────────────────────────────────────────────────
+-- Maps auraInstanceID → auraData for all current HELPFUL buffs on the player.
+-- Built once on login, then patched on each UNIT_AURA event using updateInfo deltas.
+-- A nil updateInfo is a full-refresh signal — we rebuild from scratch.
+-- State.lua reads this cache for campfire/sitting detection instead of ForEachAura.
+ICN2._auraCache = {}  -- public so State.lua can read it
+
+local function rebuildAuraCache()
+    local cache = {}
     local i = 1
     while true do
         local aura = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not aura then break end
-        if matchesAny(aura.name, patterns) then return aura end
-        if extraPatterns and matchesAny(aura.name, extraPatterns) then return aura end
+        if aura.auraInstanceID then
+            cache[aura.auraInstanceID] = aura
+        end
         i = i + 1
     end
+    ICN2._auraCache = cache
+end
+
+local function patchAuraCache(updateInfo)
+    -- updateInfo.addedAuras / updatedAuraInstanceIDs: fetch fresh data and upsert
+    -- updateInfo.removedAuraInstanceIDs: delete from cache
+    local cache = ICN2._auraCache
+
+    if updateInfo.addedAuras then
+        for _, aura in ipairs(updateInfo.addedAuras) do
+            if aura.auraInstanceID then
+                cache[aura.auraInstanceID] = aura
+            end
+        end
+    end
+
+    if updateInfo.updatedAuraInstanceIDs then
+        for _, id in ipairs(updateInfo.updatedAuraInstanceIDs) do
+            local fresh = C_UnitAuras.GetAuraDataByAuraInstanceID("player", id)
+            if fresh then
+                cache[id] = fresh
+            else
+                cache[id] = nil  -- expired between event and fetch
+            end
+        end
+    end
+
+    if updateInfo.removedAuraInstanceIDs then
+        for _, id in ipairs(updateInfo.removedAuraInstanceIDs) do
+            cache[id] = nil
+        end
+    end
+end
+
+-- Searches the cache for the first aura matching any pattern set.
+-- Returns the auraData table or nil.
+local function findAuraInCache(patterns, extraPatterns)
+    for _, aura in pairs(ICN2._auraCache) do
+        if matchesAny(aura.name, patterns) then return aura end
+        if extraPatterns and matchesAny(aura.name, extraPatterns) then return aura end
+    end
     return nil
+end
+
+-- Seeds the cache on login. Called from Core after a 1-second delay (same as armor cache).
+function ICN2:InitAuraCache()
+    rebuildAuraCache()
 end
 
 -- ── Tier detection ────────────────────────────────────────────────────────────
@@ -153,22 +206,39 @@ local function applyBonus(state, need, natural)
 
     ICN2:UpdateHUD()
 
-    local needStr = (need == "hunger") and "|cFF00FF00Hunger|r" or "|cFF4499FFThirst|r"
-    if isFeast then needStr = "|cFF00FF00Hunger|r & |cFF4499FFThirst|r" end
-    print(string.format("|cFFFF6600ICN2|r %s completion bonus! (+%.0f pts — %s tier)",
-        needStr, bonus, state.tier))
+    local needStr
+    if isFeast then
+        needStr = L["FOOD_BONUS_BOTH"]
+    elseif need == "hunger" then
+        needStr = L["FOOD_BONUS_HUNGER"]
+    else
+        needStr = L["FOOD_BONUS_THIRST"]
+    end
+    print(string.format("|cFFFF6600ICN2|r " .. L["FOOD_BONUS_MSG"], needStr, bonus, state.tier))
 end
 
--- ── Main aura scan ────────────────────────────────────────────────────────────
--- Scans player auras for food/drink buffs and updates state accordingly.
-function ICN2:OnUnitAura()
+-- ── Main aura handler ────────────────────────────────────────────────────────
+-- Entry point called by Core's UNIT_AURA event with the raw updateInfo payload.
+-- Step 1: Update the shared aura cache (delta patch or full rebuild).
+-- Step 2: Derive food/drink/wellfed state from the now-current cache.
+-- State.lua reads ICN2._auraCache directly for campfire/sitting — no extra scan needed.
+function ICN2:OnUnitAura(updateInfo)
+    -- ── Step 1: maintain the cache ────────────────────────────────────────────
+    -- updateInfo == nil is Blizzard's signal for a full refresh (login, reload, etc.)
+    if not updateInfo then
+        rebuildAuraCache()
+    else
+        patchAuraCache(updateInfo)
+    end
+
+    -- ── Step 2: derive state from cache ───────────────────────────────────────
     if ICN2.State and ICN2.State.inInstance then return end
     if UnitAffectingCombat("player") then return end
 
     local now = GetTime()
 
     -- ── Food aura handling ─────────────────────────────────────────────────────
-    local foodAura = findAura(FOOD_AURA_PATTERNS)
+    local foodAura = findAuraInCache(FOOD_AURA_PATTERNS)
     if foodAura then
         if not foodState.active then
             foodState.active    = true
@@ -190,7 +260,7 @@ function ICN2:OnUnitAura()
     end
 
     -- ── Well Fed aura handling (with eating-linked eligibility) ───────────────
-    local wellFedAura = findAura(WELLFED_PATTERNS)
+    local wellFedAura = findAuraInCache(WELLFED_PATTERNS)
     if wellFedAura then
         local id = wellFedAura.auraInstanceID or 0
         if id ~= ICN2._lastWellFedInstanceID and ICN2DB.wellFedEligible then
@@ -199,7 +269,7 @@ function ICN2:OnUnitAura()
             ICN2DB.wellFedEligible      = false
             
             print(string.format(
-                "|cFFFF6600ICN2|r |cFF00FF00Well Fed!|r Hunger decay paused for %d min.",
+                "|cFFFF6600ICN2|r " .. L["WELLFED_MSG"],
                 math.floor(WELLFED_PAUSE_SECS / 60)))
         end
     else
@@ -207,7 +277,7 @@ function ICN2:OnUnitAura()
     end
 
     -- ── Drink aura handling ───────────────────────────────────────────────────
-    local drinkAura = findAura(DRINK_AURA_PATTERNS, DRINK_EXTRA_PATTERNS)
+    local drinkAura = findAuraInCache(DRINK_AURA_PATTERNS, DRINK_EXTRA_PATTERNS)
     if drinkAura then
         if not drinkState.active then
             drinkState.active    = true
