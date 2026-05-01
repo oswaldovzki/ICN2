@@ -42,8 +42,10 @@
 
 ### Localization
 
+- Localized UI and chat messages; added combat guard to prevent aura scanning in unsafe contexts.
+- Extended localization coverage and replaced remaining hardcoded strings across all modules.
+- Revamped localization system: standardized color codes, improved fallback behavior, and expanded string coverage.
 
 ### Aura Scanning
 
-
-### 
+- Added persistent aura cache with delta-based updates, reducing redundant scans and improving tick performance.
